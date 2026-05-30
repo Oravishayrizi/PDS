@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #fff;
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+  }
+  .container { width: 100%; max-width: 860px; }
+
+  .controls {
+    display: flex; gap: 20px; justify-content: center;
+    align-items: center; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .toggle-group { display: flex; }
+  .toggle-btn {
+    font-size: 13px; font-weight: 700; padding: 6px 20px;
+    border: 2px solid #ccc; cursor: pointer; background: #fff; color: #999;
+    transition: all 0.15s; letter-spacing: 0.02em;
+  }
+  .toggle-btn:first-child { border-radius: 5px 0 0 5px; border-right: 1px solid #ccc; }
+  .toggle-btn:last-child  { border-radius: 0 5px 5px 0; border-left:  1px solid #ccc; }
+  .toggle-btn.active-lasso { background: #f8eaeb; color: #941b22; border-color: #941b22; }
+  .toggle-btn.active-ridge { background: #e8f0f7; color: #0063a7; border-color: #0063a7; }
+
+  .slider-wrap { display: flex; align-items: center; gap: 8px; }
+  .slider-wrap label { font-size: 13px; font-weight: 700; color: #333; }
+  .slider-wrap input[type=range] { width: 200px; cursor: pointer; accent-color: #941b22; }
+  .slider-wrap .sval { font-size: 14px; font-weight: 700; min-width: 40px; color: #333; }
+
+  .main-row { display: flex; gap: 16px; align-items: center; }
+  /* square canvas wrapper */
+  .canvas-wrap { flex: 0 0 auto; position: relative; }
+  .canvas-wrap canvas { display: block; border: 1px solid #e0e0e0; border-radius: 6px; }
+
+  .info-panel { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .info-card { background: #f7f7f7; border-radius: 6px; padding: 9px 12px; text-align: center; }
+  .info-card .card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 3px; }
+  .info-card .card-value { font-size: 18px; font-weight: 700; }
+  .info-card .card-sub   { font-size: 10px; color: #aaa; margin-top: 2px; }
+  .info-card.blue { background: #e8f0f7; }
+  .info-card.blue .card-value { color: #0063a7; }
+  .info-card.red  .card-value { color: #941b22; }
+
+  .regime-box {
+    background: #f7f7f7; border-radius: 6px;
+    padding: 9px 12px; font-size: 11px; color: #555;
+    line-height: 1.55; text-align: center;
+  }
+  .regime-box strong { display: block; font-size: 12px; margin-bottom: 3px; color: #222; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="controls">
+    <div class="toggle-group">
+      <button class="toggle-btn active-lasso" id="btnLasso" onclick="setMethod('lasso')">Lasso (ℓ₁)</button>
+      <button class="toggle-btn"              id="btnRidge" onclick="setMethod('ridge')">Ridge (ℓ₂)</button>
+    </div>
+    <div class="slider-wrap">
+      <label>Budget <em>s</em> =</label>
+      <input type="range" id="sSlider" min="1" max="99" value="40" oninput="redraw()">
+      <span class="sval" id="sVal">—</span>
+    </div>
+  </div>
+
+  <div class="main-row">
+    <div class="canvas-wrap">
+      <canvas id="cv"></canvas>
+    </div>
+    <div class="info-panel">
+      <div class="info-card blue">
+        <div class="card-label">β̂₁  (regularized)</div>
+        <div class="card-value" id="b1val">—</div>
+      </div>
+      <div class="info-card blue">
+        <div class="card-label">β̂₂  (regularized)</div>
+        <div class="card-value" id="b2val">—</div>
+      </div>
+      <div class="info-card red">
+        <div class="card-label">β̂₁  OLS</div>
+        <div class="card-value" id="ols1val">—</div>
+        <div class="card-sub">unconstrained</div>
+      </div>
+      <div class="info-card red">
+        <div class="card-label">β̂₂  OLS</div>
+        <div class="card-value" id="ols2val">—</div>
+        <div class="card-sub">unconstrained</div>
+      </div>
+      <div class="regime-box" id="regimeBox">—</div>
+    </div>
+  </div>
+
+</div>
+<script>
+// ── palette ───────────────────────────────────────────────────────────────────
+const BLUE        = '#0063a7';
+const RED         = '#941b22';
+const BLUE_FILL   = 'rgba(0,99,167,0.12)';
+const BLUE_STROKE = 'rgba(0,99,167,0.75)';
+
+// ── OLS estimate ──────────────────────────────────────────────────────────────
+// b1 >> b2 so lasso corner is reached quickly
+const OLS    = { b1: 2.2, b2: 0.9 };
+const OLS_L1 = Math.abs(OLS.b1) + Math.abs(OLS.b2);  // 3.1
+const OLS_L2 = Math.hypot(OLS.b1, OLS.b2);            // ≈ 2.38
+
+// ── data range ────────────────────────────────────────────────────────────────
+const RANGE = 3.4;   // ± RANGE shown on each axis
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let method = 'lasso';
+
+// ── canvas — always SQUARE ────────────────────────────────────────────────────
+// A square canvas means px() and py() have identical scale factors,
+// so data-space L1 ball = perfect diamond and L2 ball = perfect circle.
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+function resize() {
+  // Fit inside the available width, but cap so info panel stays visible
+  const maxW = Math.min(cv.parentElement.clientWidth, 480);
+  cv.width  = maxW;
+  cv.height = maxW;   // SQUARE
+  redraw();
+}
+
+// ── coordinate transforms (identical scale on x and y) ────────────────────────
+const PAD = () => cv.width * 0.11;
+function scl() { return (cv.width - 2 * PAD()) / (2 * RANGE); }  // pixels per data unit
+function px(v) { return PAD() + (v + RANGE) * scl(); }
+function py(v) { return cv.height - PAD() - (v + RANGE) * scl(); }  // y flipped
+
+// ── budget ────────────────────────────────────────────────────────────────────
+function getBudget() {
+  const t   = parseInt(document.getElementById('sSlider').value) / 100;
+  const max = (method === 'lasso' ? OLS_L1 : OLS_L2) * 1.5;
+  return t * max;
+}
+
+// ── projections — pure data space (works because canvas is square) ─────────────
+
+// Lasso: closest point to OLS on L1 boundary of radius s.
+// OLS in positive quadrant → solution on face b1+b2=s (or a corner).
+// FOC: b1 = (s + OLS.b1 - OLS.b2)/2, b2 = s - b1. Clamp to corners.
+function lassoProject(s) {
+  let b1 = (s + OLS.b1 - OLS.b2) / 2;
+  let b2 = s - b1;
+  if (b1 < 0) { b1 = 0; b2 = s; }
+  if (b2 < 0) { b2 = 0; b1 = s; }
+  return { b1, b2 };
+}
+
+// Ridge: scale OLS to L2 norm = s.
+function ridgeProject(s) {
+  const sc = s / OLS_L2;
+  return { b1: OLS.b1 * sc, b2: OLS.b2 * sc };
+}
+
+function getContact(s) {
+  if (method === 'lasso') {
+    if (OLS_L1 <= s) return null;
+    const c = lassoProject(s);
+    // Fade out contact point as it approaches OLS (within last 8% of budget range)
+    const proximity = s / OLS_L1;  // 0→1
+    c.alpha = proximity > 0.92 ? 1 - (proximity - 0.92) / 0.08 : 1;
+    return c;
+  } else {
+    if (OLS_L2 <= s) return null;
+    const c = ridgeProject(s);
+    const proximity = s / OLS_L2;
+    c.alpha = proximity > 0.92 ? 1 - (proximity - 0.92) / 0.08 : 1;
+    return c;
+  }
+}
+
+// ── axes ──────────────────────────────────────────────────────────────────────
+function drawAxes() {
+  ctx.save();
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px(-RANGE), py(0)); ctx.lineTo(px(RANGE), py(0));
+  ctx.moveTo(px(0), py(-RANGE)); ctx.lineTo(px(0), py(RANGE));
+  ctx.stroke();
+  const fs = Math.round(cv.width * 0.040);
+  ctx.font = `bold ${fs}px serif`; ctx.fillStyle = '#555';
+  ctx.textAlign = 'center';
+  ctx.fillText('β₁', px(RANGE * 0.88), py(-RANGE * 0.10));
+  ctx.textAlign = 'left';
+  ctx.fillText('β₂', px(RANGE * 0.03), py(RANGE * 0.85));
+  ctx.restore();
+}
+
+// ── constraint region ─────────────────────────────────────────────────────────
+function drawConstraintRegion(s) {
+  ctx.save();
+  ctx.fillStyle = BLUE_FILL; ctx.strokeStyle = BLUE_STROKE; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (method === 'lasso') {
+    // L1 ball in data space = perfect diamond (canvas is square → equal scale)
+    ctx.moveTo(px(s),  py(0));
+    ctx.lineTo(px(0),  py(s));
+    ctx.lineTo(px(-s), py(0));
+    ctx.lineTo(px(0),  py(-s));
+    ctx.closePath();
+  } else {
+    // L2 ball in data space = perfect circle
+    ctx.arc(px(0), py(0), s * scl(), 0, 2 * Math.PI);
+  }
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+// ── RSS contours ──────────────────────────────────────────────────────────────
+// Dashed outer contours: FIXED size, always centred on OLS.
+// Solid innermost contour: moves with contact point, passes exactly through it.
+function drawRSSContours(contact) {
+  if (!contact) return;
+
+  const THETA  = Math.PI * 0.15;
+  const ASPECT = 0.65;
+  const alpha  = contact.alpha !== undefined ? contact.alpha : 1;
+
+  // Fixed base radius for dashed contours — in pixels, constant regardless of s
+  const fixedA = cv.width * 0.13;
+  const fixedB = fixedA * ASPECT;
+
+  // Solid innermost: sized to pass exactly through contact point
+  const dx = px(contact.b1) - px(OLS.b1);
+  const dy = py(contact.b2) - py(OLS.b2);
+  const cT = Math.cos(THETA), sT = Math.sin(THETA);
+  const u  =  cT * dx + sT * dy;
+  const v  = -sT * dx + cT * dy;
+  const a0 = Math.sqrt(u * u + (v * v) / (ASPECT * ASPECT));
+
+  ctx.save();
+
+  // Draw dashed contours from largest to smallest (so they render behind solid)
+  const dashedScales = [3.0, 2.0, 1.4];
+  for (const sc of dashedScales) {
+    ctx.beginPath();
+    ctx.ellipse(px(OLS.b1), py(OLS.b2), fixedA * sc, fixedB * sc, THETA, 0, 2 * Math.PI);
+    ctx.strokeStyle = `rgba(148,27,34,0.10)`;
+    ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Draw solid innermost contour
+  ctx.beginPath();
+  ctx.ellipse(px(OLS.b1), py(OLS.b2), a0, a0 * ASPECT, THETA, 0, 2 * Math.PI);
+  ctx.strokeStyle = `rgba(148,27,34,${alpha.toFixed(3)})`;
+  ctx.lineWidth = 2.2; ctx.setLineDash([]);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ── OLS dot ───────────────────────────────────────────────────────────────────
+function drawOLS() {
+  const r = cv.width * 0.022;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(px(OLS.b1), py(OLS.b2), r, 0, 2 * Math.PI);
+  ctx.fillStyle = RED; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `${Math.round(cv.width * 0.036)}px serif`;
+  ctx.fillStyle = RED; ctx.textAlign = 'left';
+  ctx.fillText('β̂ OLS', px(OLS.b1) + r + 4, py(OLS.b2) - r - 2);
+  ctx.restore();
+}
+
+// ── contact dot + dashed line ─────────────────────────────────────────────────
+function drawContact(contact) {
+  if (!contact) return;
+  const cx = px(contact.b1), cy = py(contact.b2);
+  const r  = cv.width * 0.024;
+  const alpha = contact.alpha !== undefined ? contact.alpha : 1;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(px(OLS.b1), py(OLS.b2)); ctx.lineTo(cx, cy);
+  ctx.strokeStyle = `rgba(0,0,0,${(0.20 * alpha).toFixed(3)})`; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = `rgba(0,99,167,${alpha.toFixed(3)})`; ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.font = `bold ${Math.round(cv.width * 0.036)}px serif`;
+  ctx.fillStyle = `rgba(0,99,167,${alpha.toFixed(3)})`; ctx.textAlign = 'right';
+  ctx.fillText('β̂', cx - r - 3, cy - r - 4);
+  ctx.restore();
+}
+
+// ── info panel ────────────────────────────────────────────────────────────────
+function updateInfo(contact, s) {
+  const b1 = contact ? contact.b1 : OLS.b1;
+  const b2 = contact ? contact.b2 : OLS.b2;
+  document.getElementById('b1val').textContent   = b1.toFixed(2);
+  document.getElementById('b2val').textContent   = b2.toFixed(2);
+  document.getElementById('ols1val').textContent = OLS.b1.toFixed(2);
+  document.getElementById('ols2val').textContent = OLS.b2.toFixed(2);
+  document.getElementById('sVal').textContent    = s.toFixed(2);
+
+  const box = document.getElementById('regimeBox');
+  if (!contact) {
+    box.innerHTML = `<strong>No shrinkage</strong>Budget is large enough — OLS is inside the constraint region.`;
+  } else if (method === 'lasso' && b2 < 0.01) {
+    box.innerHTML = `<strong>Variable selection</strong>Contour hits a corner — β̂₂ is exactly zero.`;
+  } else {
+    box.innerHTML = `<strong>Shrinkage active</strong>Contour touches the boundary — both coefficients shrunk toward zero.`;
+  }
+}
+
+// ── main ──────────────────────────────────────────────────────────────────────
+function redraw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const s       = getBudget();
+  const contact = getContact(s);
+  drawAxes();
+  drawConstraintRegion(s);
+  drawRSSContours(contact);
+  drawContact(contact);
+  drawOLS();
+  updateInfo(contact, s);
+}
+
+function setMethod(m) {
+  method = m;
+  document.getElementById('btnLasso').className = 'toggle-btn' + (m === 'lasso' ? ' active-lasso' : '');
+  document.getElementById('btnRidge').className = 'toggle-btn' + (m === 'ridge' ? ' active-ridge' : '');
+  document.querySelector('input[type=range]').style.accentColor = m === 'lasso' ? RED : BLUE;
+  redraw();
+}
+
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>

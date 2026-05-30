@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #fff;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .wrapper {
+    display: flex;
+    height: 100vh;
+    gap: 14px;
+    padding: 10px;
+  }
+  .chart-area {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    border-radius: 4px;
+    cursor: crosshair;
+  }
+
+  .panel {
+    width: 310px;
+    min-width: 310px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    justify-content: center;
+  }
+
+  .title-box {
+    text-align: center;
+    padding: 8px;
+    border-radius: 8px;
+    background: #e8f0f7;
+  }
+  .title-box h2 { font-size: 17px; color: #0063a7; margin-bottom: 2px; }
+  .title-box p { font-size: 12px; color: #555; }
+
+  .stat {
+    border-radius: 8px;
+    padding: 4px 16px;
+    text-align: center;
+    height: 56px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .stat .sl { font-size: 12px; color: #666; display: block; margin-bottom: 1px; }
+  .stat .sv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-yours { background: #fff3e0; }
+  .stat-yours .sv { color: #941b22; }
+  .stat-best { background: #e8f5e9; }
+  .stat-best .sv { color: #2e7d32; }
+  .stat-none { background: #f5f5f5; }
+  .stat-none .sv { color: #888; }
+
+  .split-info {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: #444;
+    line-height: 1.5;
+    max-height: 100px;
+    min-height: 36px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .split-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 1px 0;
+  }
+
+
+
+						
+					   
+					  
+					
+				
+					 
+					 
+					 
+   
+			   
+				  
+								   
+				   
+   
+												  
+
+  .btn {
+    padding: 9px 14px;
+    border: 2px solid;
+    background: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    transition: all 0.15s;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .btn:hover { color: #fff; }
+  .btn-best { color: #2e7d32; border-color: #2e7d32; }
+  .btn-best:hover { background: #2e7d32; }
+  .btn-undo { color: #b35900; border-color: #b35900; }
+  .btn-undo:hover { background: #b35900; }
+  .btn-reset { color: #941b22; border-color: #941b22; }
+  .btn-reset:hover { background: #941b22; }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { flex: 1; font-size: 13px; padding: 7px 6px; }
+
+  .mode-toggle {
+    display: flex;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #0063a7;
+    height: 34px;
+    flex-shrink: 0;
+  }
+  .mode-btn {
+    flex: 1;
+    height: 100%;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: #fff;
+    color: #0063a7;
+    transition: all 0.15s;
+    line-height: 30px;
+    padding: 0;
+  }
+  .mode-btn.active { background: #0063a7; color: #fff; }
+
+  .instructions {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="chart-area">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="panel">
+    <div class="title-box">
+      <h2>Build a Decision Tree</h2>
+      <p>Click on the plot to place splits</p>
+    </div>
+
+    <div class="mode-toggle">
+      <button class="mode-btn" id="modeV">| Split on X₁</button>
+      <button class="mode-btn active" id="modeH">― Split on X₂</button>
+    </div>
+
+    <div class="stat stat-yours">
+      <span class="sl">Your MSE</span>
+      <span class="sv" id="yourRSS">—</span>
+    </div>
+    <div class="stat stat-none">
+      <span class="sl">No-Split MSE (just the mean)</span>
+      <span class="sv" id="noSplitRSS">—</span>
+    </div>
+    <div class="stat stat-best">
+      <span class="sl">Best Greedy Next-Split MSE</span>
+      <span class="sv" id="bestRSS">—</span>
+    </div>
+
+    <div class="split-info" id="splitInfo">
+      <div style="color:#999; text-align:center;">No splits yet</div>
+    </div>
+
+												   
+
+    <button class="btn btn-best" id="btnBest">Show Best Next Split</button>
+    <div class="btn-row">
+      <button class="btn btn-undo" id="btnUndo">Undo</button>
+      <button class="btn btn-reset" id="btnReset">Reset</button>
+    </div>
+
+    <div class="instructions">
+      Choose a split direction, then click to place it.<br>
+      <b>Drag the last split</b> to find the best position.<br>
+      Press <b>H</b> / <b>V</b> to switch direction. <b>Ctrl+Z</b> to undo.
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Seeded RNG ──
+function lcg(seed) {
+  let s = seed | 0;
+  return function() {
+    s = Math.imul(s, 1664525) + 1013904223 | 0;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+// ── Data generation ──
+const rng = lcg(2026);
+const N = 50;
+const dataX1 = [], dataX2 = [], dataY = [];
+for (let i = 0; i < N; i++) {
+  const x1 = rng() * 10;
+  const x2 = rng() * 10;
+  let y;
+  if (x1 < 5) {
+    y = x2 < 5 ? 5 : 12;
+  } else {
+    y = x2 < 6 ? 15 : 9;
+  }
+  y += (rng() - 0.5) * 5;
+  dataX1.push(x1);
+  dataX2.push(x2);
+  dataY.push(Math.round(y * 10) / 10);
+}
+const allYmin = Math.min(...dataY);
+const allYmax = Math.max(...dataY);
+
+// ── Splits: flat list, each stores its parent region bounds ──
+let splits = [];
+let splitMode = 'h';
+
+function getRegions() {
+  let leaves = [{ x1min: 0, x1max: 10, x2min: 0, x2max: 10 }];
+  for (const sp of splits) {
+    const b = sp.bounds;
+    const idx = leaves.findIndex(r =>
+      Math.abs(r.x1min - b.x1min) < 1e-9 && Math.abs(r.x1max - b.x1max) < 1e-9 &&
+      Math.abs(r.x2min - b.x2min) < 1e-9 && Math.abs(r.x2max - b.x2max) < 1e-9
+    );
+    if (idx === -1) continue;
+    const r = leaves[idx];
+    let r1, r2;
+    if (sp.axis === 'v') {
+      r1 = { x1min: r.x1min, x1max: sp.value, x2min: r.x2min, x2max: r.x2max };
+      r2 = { x1min: sp.value, x1max: r.x1max, x2min: r.x2min, x2max: r.x2max };
+    } else {
+      r1 = { x1min: r.x1min, x1max: r.x1max, x2min: r.x2min, x2max: sp.value };
+      r2 = { x1min: r.x1min, x1max: r.x1max, x2min: sp.value, x2max: r.x2max };
+    }
+    leaves.splice(idx, 1, r1, r2);
+  }
+  return leaves;
+}
+
+function findLeafAt(x1, x2) {
+  const regions = getRegions();
+  for (const r of regions) {
+    if (x1 >= r.x1min && x1 <= r.x1max && x2 >= r.x2min && x2 <= r.x2max) return r;
+  }
+  return regions[0];
+}
+
+function pointsInRegion(r) {
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const in1 = dataX1[i] >= r.x1min && dataX1[i] < r.x1max;
+    const in1e = dataX1[i] === r.x1max && r.x1max === 10;
+    const in2 = dataX2[i] >= r.x2min && dataX2[i] < r.x2max;
+    const in2e = dataX2[i] === r.x2max && r.x2max === 10;
+    if ((in1 || in1e) && (in2 || in2e)) out.push(i);
+  }
+  return out;
+}
+
+function regionRSS(r) {
+  const pts = pointsInRegion(r);
+  if (pts.length === 0) return 0;
+  const m = pts.reduce((s, i) => s + dataY[i], 0) / pts.length;
+  return pts.reduce((s, i) => s + (dataY[i] - m) ** 2, 0);
+}
+
+function totalMSE() {
+  return getRegions().reduce((s, r) => s + regionRSS(r), 0) / N;
+}
+
+function noSplitMSE() {
+  const m = dataY.reduce((a, b) => a + b, 0) / N;
+  return dataY.reduce((s, y) => s + (y - m) ** 2, 0) / N;
+}
+
+function findBestSplit() {
+  const regions = getRegions();
+  let bestMSE = Infinity, bestSplit = null;
+
+  for (const r of regions) {
+    const pts = pointsInRegion(r);
+    if (pts.length < 2) continue;
+    let otherRSS = 0;
+    for (const r2 of regions) { if (r2 !== r) otherRSS += regionRSS(r2); }
+
+    const x1s = [...new Set(pts.map(i => dataX1[i]))].sort((a, b) => a - b);
+    for (let k = 0; k < x1s.length - 1; k++) {
+      const cut = (x1s[k] + x1s[k + 1]) / 2;
+      if (cut <= r.x1min || cut >= r.x1max) continue;
+      const mse = (otherRSS + regionRSS({ ...r, x1max: cut }) + regionRSS({ ...r, x1min: cut })) / N;
+      if (mse < bestMSE) { bestMSE = mse; bestSplit = { axis: 'v', value: cut, bounds: { ...r } }; }
+    }
+
+    const x2s = [...new Set(pts.map(i => dataX2[i]))].sort((a, b) => a - b);
+    for (let k = 0; k < x2s.length - 1; k++) {
+      const cut = (x2s[k] + x2s[k + 1]) / 2;
+      if (cut <= r.x2min || cut >= r.x2max) continue;
+      const mse = (otherRSS + regionRSS({ ...r, x2max: cut }) + regionRSS({ ...r, x2min: cut })) / N;
+      if (mse < bestMSE) { bestMSE = mse; bestSplit = { axis: 'h', value: cut, bounds: { ...r } }; }
+    }
+  }
+  return { split: bestSplit, mse: bestMSE };
+}
+
+// ── Canvas ──
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const pad = { l: 52, r: 20, t: 16, b: 44 };
+let hoverPos = null;
+
+function yColor(y) {
+  const t = Math.max(0, Math.min(1, (y - allYmin) / (allYmax - allYmin)));
+  let r, g, b;
+  if (t < 0.5) {
+    const s = t * 2;
+    r = Math.round(0 + s * 230); g = Math.round(99 + s * 130); b = Math.round(167 * (1 - s));
+  } else {
+    const s = (t - 0.5) * 2;
+    r = Math.round(230 - s * 82); g = Math.round(229 - s * 202); b = Math.round(0 + s * 34);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+const regionFills = [
+  'rgba(0,99,167,0.05)', 'rgba(148,27,34,0.05)',
+  'rgba(46,139,87,0.05)', 'rgba(179,89,0,0.05)',
+  'rgba(100,50,150,0.05)', 'rgba(0,150,150,0.05)',
+];
+const splitColors = ['#0063a7', '#941b22', '#2e8b57', '#b35900', '#6a1b9a', '#00838f'];
+
+function resize() {
+  const rect = document.querySelector('.chart-area').getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function draw() {
+  const W = canvas.width / (window.devicePixelRatio || 1);
+  const H = canvas.height / (window.devicePixelRatio || 1);
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  function sx(v) { return pad.l + v / 10 * pw; }
+  function sy(v) { return pad.t + (1 - v / 10) * ph; }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 1;
+  for (let v = 0; v <= 10; v += 2) {
+    ctx.beginPath(); ctx.moveTo(sx(v), pad.t); ctx.lineTo(sx(v), H - pad.b); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad.l, sy(v)); ctx.lineTo(W - pad.r, sy(v)); ctx.stroke();
+  }
+
+  // Region fills
+  const regions = getRegions();
+  for (let i = 0; i < regions.length; i++) {
+    const r = regions[i];
+    ctx.fillStyle = regionFills[i % regionFills.length];
+    ctx.fillRect(sx(r.x1min), sy(r.x2max), sx(r.x1max) - sx(r.x1min), sy(r.x2min) - sy(r.x2max));
+  }
+
+  // Region mean labels
+  ctx.font = 'bold 13px -apple-system, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const r of regions) {
+    const pts = pointsInRegion(r);
+    if (pts.length === 0) continue;
+    const mean = pts.reduce((s, j) => s + dataY[j], 0) / pts.length;
+    const cx = sx((r.x1min + r.x1max) / 2), cy = sy((r.x2min + r.x2max) / 2);
+    const text = 'ŷ = ' + mean.toFixed(1);
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillRect(cx - tw / 2 - 5, cy - 9, tw + 10, 18);
+    ctx.fillStyle = '#333';
+    ctx.fillText(text, cx, cy);
+  }
+
+  // Split lines
+  for (let i = 0; i < splits.length; i++) {
+    const sp = splits[i];
+    const isLast = i === splits.length - 1;
+    ctx.strokeStyle = splitColors[i % splitColors.length];
+    ctx.lineWidth = isLast ? 3.5 : 2.5; ctx.setLineDash([]);
+    ctx.beginPath();
+    let x1s, y1s, x2s, y2s;
+    if (sp.axis === 'v') {
+      x1s = sx(sp.value); y1s = sy(sp.bounds.x2min);
+      x2s = sx(sp.value); y2s = sy(sp.bounds.x2max);
+    } else {
+      x1s = sx(sp.bounds.x1min); y1s = sy(sp.value);
+      x2s = sx(sp.bounds.x1max); y2s = sy(sp.value);
+    }
+    ctx.moveTo(x1s, y1s); ctx.lineTo(x2s, y2s);
+    ctx.stroke();
+
+    // Drag handles on last split
+    if (isLast) {
+      const midX = (x1s + x2s) / 2, midY = (y1s + y2s) / 2;
+      // Draw small diamond handle at midpoint
+      const hs = 6;
+      ctx.fillStyle = splitColors[i % splitColors.length];
+      ctx.beginPath();
+      ctx.moveTo(midX, midY - hs);
+      ctx.lineTo(midX + hs, midY);
+      ctx.lineTo(midX, midY + hs);
+      ctx.lineTo(midX - hs, midY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+      // Arrow hints
+      if (!dragging) {
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.font = '14px -apple-system, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        if (sp.axis === 'v') {
+          ctx.fillText('◂', midX - 12, midY);
+          ctx.fillText('▸', midX + 12, midY);
+        } else {
+          ctx.fillText('▴', midX, midY - 12);
+          ctx.fillText('▾', midX, midY + 12);
+        }
+      }
+    }
+
+    // Label
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = splitColors[i % splitColors.length];
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    if (sp.axis === 'v') {
+      ctx.fillText('X₁<' + sp.value.toFixed(1), sx(sp.value) + 3, sy(sp.bounds.x2max) + 14);
+    } else {
+      ctx.fillText('X₂<' + sp.value.toFixed(1), sx(sp.bounds.x1min) + 3, sy(sp.value) - 3);
+    }
+  }
+
+  // Hover preview
+  if (hoverPos) {
+    const leaf = findLeafAt(hoverPos.x, hoverPos.y);
+    ctx.strokeStyle = splitMode === 'v' ? 'rgba(0,99,167,0.35)' : 'rgba(148,27,34,0.35)';
+    ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    if (splitMode === 'v') {
+      ctx.moveTo(sx(hoverPos.x), sy(leaf.x2min));
+      ctx.lineTo(sx(hoverPos.x), sy(leaf.x2max));
+    } else {
+      ctx.moveTo(sx(leaf.x1min), sy(hoverPos.y));
+      ctx.lineTo(sx(leaf.x1max), sy(hoverPos.y));
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Data points
+  for (let i = 0; i < N; i++) {
+    const px = sx(dataX1[i]), py = sy(dataX2[i]);
+    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.fillStyle = yColor(dataY[i]); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(pad.l, H - pad.b); ctx.lineTo(W - pad.r, H - pad.b); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H - pad.b); ctx.stroke();
+
+  ctx.fillStyle = '#888'; ctx.font = '13px -apple-system, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let v = 0; v <= 10; v += 2) ctx.fillText(v, sx(v), H - pad.b + 6);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = 0; v <= 10; v += 2) ctx.fillText(v, pad.l - 8, sy(v));
+
+  ctx.fillStyle = '#444'; ctx.font = 'bold 16px -apple-system, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('X₁', W / 2, H - 14);
+  ctx.save(); ctx.translate(14, H / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('X₂', 0, 0); ctx.restore();
+
+  // Color legend
+  const legW = 14, legH = 90;
+  const legX = W - pad.r - legW - 2, legY = pad.t + 6;
+  for (let i = 0; i < legH; i++) {
+    ctx.fillStyle = yColor(allYmin + (1 - i / legH) * (allYmax - allYmin));
+    ctx.fillRect(legX, legY + i, legW, 1.5);
+  }
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+  ctx.strokeRect(legX, legY, legW, legH);
+  ctx.fillStyle = '#666'; ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(allYmax.toFixed(0), legX - 3, legY + 2);
+  ctx.fillText(allYmin.toFixed(0), legX - 3, legY + legH - 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('Y', legX + legW / 2, legY - 2);
+
+  // Panel
+  document.getElementById('yourRSS').textContent = totalMSE().toFixed(2);
+  document.getElementById('noSplitRSS').textContent = noSplitMSE().toFixed(2);
+  const best = findBestSplit();
+  document.getElementById('bestRSS').textContent = best.split ? best.mse.toFixed(2) : '—';
+
+  const el = document.getElementById('yourRSS');
+  const ratio = totalMSE() / noSplitMSE();
+  el.style.color = ratio < 0.5 ? '#2e7d32' : ratio < 0.85 ? '#e65100' : '#941b22';
+
+  updateSplitInfo();
+							
+}
+
+function updateSplitInfo() {
+  const el = document.getElementById('splitInfo');
+  if (!splits.length) { el.innerHTML = '<div style="color:#999;text-align:center">No splits yet</div>'; return; }
+  el.innerHTML = splits.map((sp, i) => {
+    const v = sp.axis === 'v' ? 'X₁' : 'X₂';
+    const c = splitColors[i % splitColors.length];
+    return `<div class="split-item"><span style="color:#666">Split ${i+1}:</span>
+      <span style="color:${c};font-weight:700">${v} &lt; ${sp.value.toFixed(2)}</span></div>`;
+  }).join('');
+}
+
+									
+												   
+													
+										
+								  
+																									  
+																											 
+									 
+			  
+ 
+
+// ── Interaction ──
+let dragging = false;  // true while dragging the last split
+
+function canvasToData(e) {
+  const rect = canvas.getBoundingClientRect();
+  const pw = rect.width - pad.l - pad.r, ph = rect.height - pad.t - pad.b;
+  return { x: (e.clientX - rect.left - pad.l) / pw * 10, y: (1 - (e.clientY - rect.top - pad.t) / ph) * 10 };
+}
+
+// Is cursor near the last split line? Returns true if within ~8px
+function isNearLastSplit(p) {
+  if (!splits.length) return false;
+  const sp = splits[splits.length - 1];
+  const rect = canvas.getBoundingClientRect();
+  const pw = rect.width - pad.l - pad.r, ph = rect.height - pad.t - pad.b;
+  const pixPerUnit1 = pw / 10, pixPerUnit2 = ph / 10;
+  const threshold = 8; // pixels
+
+  if (sp.axis === 'v') {
+    const distPx = Math.abs(p.x - sp.value) * pixPerUnit1;
+    return distPx < threshold && p.y >= sp.bounds.x2min && p.y <= sp.bounds.x2max;
+  } else {
+    const distPx = Math.abs(p.y - sp.value) * pixPerUnit2;
+    return distPx < threshold && p.x >= sp.bounds.x1min && p.x <= sp.bounds.x1max;
+  }
+}
+
+// Clamp a split value to stay within its parent region bounds (with margin)
+function clampSplitValue(sp, newVal) {
+  const margin = 0.2;
+  if (sp.axis === 'v') {
+    return Math.max(sp.bounds.x1min + margin, Math.min(sp.bounds.x1max - margin, newVal));
+  } else {
+    return Math.max(sp.bounds.x2min + margin, Math.min(sp.bounds.x2max - margin, newVal));
+  }
+}
+
+canvas.addEventListener('mousemove', function(e) {
+  const p = canvasToData(e);
+
+  if (dragging && splits.length) {
+    // Update last split position
+    const sp = splits[splits.length - 1];
+    const newVal = sp.axis === 'v' ? p.x : p.y;
+    sp.value = clampSplitValue(sp, newVal);
+    hoverPos = null;
+    draw();
+    return;
+  }
+
+  // Update cursor: grab hand near last split, crosshair elsewhere
+  if (p.x >= 0 && p.x <= 10 && p.y >= 0 && p.y <= 10) {
+    hoverPos = isNearLastSplit(p) ? null : p;
+    canvas.style.cursor = isNearLastSplit(p) ? 'grab' : 'crosshair';
+  } else {
+    hoverPos = null;
+    canvas.style.cursor = 'default';
+  }
+  draw();
+});
+
+canvas.addEventListener('mouseleave', function() {
+  hoverPos = null;
+  dragging = false;
+  canvas.style.cursor = 'crosshair';
+  draw();
+});
+
+canvas.addEventListener('mousedown', function(e) {
+  const p = canvasToData(e);
+  if (p.x < 0.1 || p.x > 9.9 || p.y < 0.1 || p.y > 9.9) return;
+
+  // If near the last split → start dragging it
+  if (isNearLastSplit(p)) {
+    dragging = true;
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+    return;
+  }
+
+  // Otherwise → place a new split (and start dragging it immediately)
+  if (p.x < 0.3 || p.x > 9.7 || p.y < 0.3 || p.y > 9.7) return;
+  const leaf = findLeafAt(p.x, p.y);
+  const value = splitMode === 'v' ? p.x : p.y;
+  if (splitMode === 'v' && (value - leaf.x1min < 0.2 || leaf.x1max - value < 0.2)) return;
+  if (splitMode === 'h' && (value - leaf.x2min < 0.2 || leaf.x2max - value < 0.2)) return;
+  splits.push({ axis: splitMode, value, bounds: { ...leaf } });
+  dragging = true;
+  canvas.style.cursor = 'grabbing';
+  draw();
+  e.preventDefault();
+});
+
+window.addEventListener('mouseup', function() {
+  if (dragging) {
+    dragging = false;
+    canvas.style.cursor = 'crosshair';
+    draw();
+  }
+});
+
+document.getElementById('modeH').addEventListener('click', function() {
+  splitMode = 'h'; this.classList.add('active'); document.getElementById('modeV').classList.remove('active');
+});
+document.getElementById('modeV').addEventListener('click', function() {
+  splitMode = 'v'; this.classList.add('active'); document.getElementById('modeH').classList.remove('active');
+});
+
+document.getElementById('btnBest').addEventListener('click', function() {
+  const best = findBestSplit();
+  if (!best.split) return;
+  splits.push(best.split);
+  splitMode = best.split.axis;
+  document.getElementById(splitMode === 'v' ? 'modeV' : 'modeH').classList.add('active');
+  document.getElementById(splitMode === 'v' ? 'modeH' : 'modeV').classList.remove('active');
+  draw();
+});
+document.getElementById('btnUndo').addEventListener('click', function() { if (splits.length) { splits.pop(); draw(); } });
+document.getElementById('btnReset').addEventListener('click', function() { splits = []; draw(); });
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'h' || e.key === 'H') {
+    splitMode = 'h'; document.getElementById('modeH').classList.add('active');
+    document.getElementById('modeV').classList.remove('active'); draw();
+  } else if (e.key === 'v' || e.key === 'V') {
+    splitMode = 'v'; document.getElementById('modeV').classList.add('active');
+    document.getElementById('modeH').classList.remove('active'); draw();
+  } else if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+    if (splits.length) { splits.pop(); draw(); }
+  }
+});
+
+window.addEventListener('resize', resize);
+setTimeout(resize, 50);
+</script>
+</body>
+</html>

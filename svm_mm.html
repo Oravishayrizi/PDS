@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MM Widget</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: transparent;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .wrapper {
+    display: flex;
+    gap: 14px;
+    height: 100vh;
+    padding: 8px;
+  }
+  .chart-area {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    border-radius: 4px;
+  }
+  .panel {
+    width: 340px;
+    min-width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 100%;
+    overflow: hidden;
+    padding-top: 4px;
+  }
+
+  .scn-tabs { display: flex; gap: 4px; }
+  .scn-tab {
+    flex: 1;
+    padding: 6px 4px;
+    background: #fff;
+    border: 1.5px solid #d0d0d0;
+    color: #555;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.15;
+    transition: all 0.15s;
+  }
+  .scn-tab:hover { border-color: #888; }
+  .scn-tab.active {
+    background: #0063a7; color: #fff;
+    border-color: #0063a7;
+  }
+
+  .step-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+  .step-row .lbl {
+    font-size: 13px; color: #555;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 4px;
+  }
+  .step-btn {
+    flex: 1; height: 32px;
+    border: 1.5px solid #c0c0c0;
+    background: #fff; color: #333;
+    font-size: 14px; font-weight: 700;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .step-btn:hover { background: #ececec; }
+  .step-btn.active {
+    background: #0063a7; color: #fff;
+    border-color: #0063a7;
+  }
+
+  .slider-group {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 6px 14px 8px 14px;
+  }
+  .slider-group label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 1px;
+  }
+  .slider-group .val {
+    color: #0063a7;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+  .slider-group .val.user-active { color: #b35900; }
+  .slider-group input[type="range"] {
+    width: 100%;
+    accent-color: #0063a7;
+    height: 20px;
+  }
+
+  .stat {
+    border-radius: 8px;
+    padding: 5px 14px;
+    text-align: center;
+  }
+  .stat .sl { font-size: 12px; color: #666; display: block; margin-bottom: -1px; }
+  .stat .sv { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-margin { background: #e3f2fd; }
+  .stat-margin .sv { color: #0063a7; }
+  .stat-margin .sv.invalid { color: #aaa; }
+  .stat-margin .sv.user { color: #b35900; }
+  .stat-miss { background: #fff3e0; }
+  .stat-miss .sv { color: #2e7d32; }
+  .stat-miss .sv.bad { color: #941b22; }
+
+  .btn {
+    padding: 9px 14px;
+    border: 2px solid #0063a7;
+    background: #fff; color: #0063a7;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px; font-weight: 700;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .btn:hover { background: #0063a7; color: #fff; }
+
+  .caption {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #444;
+    background: #f8f6ef;
+    border-left: 3px solid #0063a7;
+    padding: 6px 10px;
+    border-radius: 0 4px 4px 0;
+    min-height: 40px;
+  }
+
+  .mode-chip {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .mode-chip.mm   { background: #e3f2fd; color: #0063a7; }
+  .mode-chip.user { background: #fff3e0; color: #b35900; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="chart-area">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="panel">
+    <div class="scn-tabs" id="scn-tabs"></div>
+
+    <div class="step-row">
+      <span class="lbl">Step</span>
+      <button class="step-btn" data-step="0">A</button>
+      <button class="step-btn" data-step="1">B</button>
+      <button class="step-btn" data-step="2">C</button>
+    </div>
+
+    <div class="slider-group">
+      <label>
+        <span>Angle <span id="mode-chip" class="mode-chip mm">MM</span></span>
+        <span class="val" id="angleVal">—</span>
+      </label>
+      <input type="range" id="angleSlider" min="45" max="135" step="0.5" value="90">
+    </div>
+
+    <div class="slider-group">
+      <label>
+        <span>Offset</span>
+        <span class="val" id="offsetVal">—</span>
+      </label>
+      <input type="range" id="offsetSlider" min="-4" max="4" step="0.05" value="0">
+    </div>
+
+    <div class="stat stat-margin">
+      <span class="sl">Margin width</span>
+      <span class="sv" id="marginVal">—</span>
+    </div>
+
+    <div class="stat stat-miss">
+      <span class="sl">Misclassified</span>
+      <span class="sv" id="missVal">0</span>
+    </div>
+
+    <button class="btn" id="resetBtn">Show MM solution</button>
+
+    <div class="caption" id="caption"></div>
+  </div>
+</div>
+
+<script>
+const DATA = {"scenarios":[{"title":"Moving an interior point","subtitle":"The blue point being moved is deep inside its class. Watch: the boundary does not change.","moving_label":1,"moving_color":"blue","steps":[{"moving_pos":[-3.5,-2.0],"fit":{"w":[-0.5451896854190666,0.06057665795839739],"b":-0.00016186298829659555,"sv":[7,9,4],"margin":3.6460107592034414,"slope":8.999996100700868,"intercept":0.0026720356281087544,"angle_deg":83.65980552953548,"offset":-0.00029507709842310407}},{"moving_pos":[-4.0,1.0],"fit":{"w":[-0.5451896854190666,0.06057665795839739],"b":-0.00016186298829659555,"sv":[7,9,4],"margin":3.6460107592034414,"slope":8.999996100700868,"intercept":0.0026720356281087544,"angle_deg":83.65980552953548,"offset":-0.00029507709842310407}},{"moving_pos":[-2.8,-2.5],"fit":{"w":[-0.5451896854190666,0.06057665795839739],"b":-0.00016186298829659555,"sv":[7,9,4],"margin":3.6460107592034414,"slope":8.999996100700868,"intercept":0.0026720356281087544,"angle_deg":83.65980552953548,"offset":-0.00029507709842310407}}],"others":[[-2.5,1.5,1],[-3.0,0.0,1],[-2.0,-1.5,1],[-3.2,2.5,1],[-1.8,0.3,1],[2.5,-1.5,-1],[3.0,0.0,-1],[2.0,1.5,-1],[3.2,-2.5,-1],[1.8,-0.3,-1]],"captions":["Step A: The moving point sits deep inside the blue cluster. It is not a support vector.","Step B: We moved it to a different interior position. The boundary stayed exactly where it was.","Step C: Moved again \u2014 still interior, still no effect. Only support vectors shape the boundary."]},{"title":"Moving a support vector","subtitle":"Now the moving point sits on the margin. Watch the boundary track it.","moving_label":1,"moving_color":"blue","steps":[{"moving_pos":[-1.0,0.0],"fit":{"w":[-0.7631921293265632,0.09158304496339517],"b":0.23651678673014068,"sv":[4,6,9],"margin":2.6019053445625775,"slope":8.333334293827024,"intercept":-2.582539014996434,"angle_deg":83.15722736858366,"offset":0.30769714573596013}},{"moving_pos":[-0.3,0.0],"fit":{"w":[-1.0414244974777807,0.12466095778860828],"b":0.6873143349907141,"sv":[4,6,9],"margin":1.9068338794394164,"slope":8.354054998067308,"intercept":-5.513469069892884,"angle_deg":83.17403927834079,"offset":0.655297129892333}},{"moving_pos":[-2.0,0.0],"fit":{"w":[-0.5523319123995903,0.06590749770872456],"b":-0.10497409161997691,"sv":[4,6,9],"margin":3.5955040073419133,"slope":8.380410903181277,"intercept":1.592748856646106,"angle_deg":83.19530492069603,"offset":-0.18871738354335207}}],"others":[[-3.0,2.0,1],[-3.5,0.5,1],[-3.2,-1.5,1],[-4.0,1.2,1],[1.5,-1.0,-1],[2.5,0.5,-1],[1.8,1.5,-1],[2.0,-2.0,-1],[2.8,-0.5,-1]],"captions":["Step A: The moving point is a support vector \u2014 sitting right on the margin.","Step B: We pushed it toward the red side. The boundary moved with it.","Step C: We pulled it back. The boundary followed. Support vectors fully determine the fit."]},{"title":"Crossing into the gap","subtitle":"The moving point starts as an interior point, then approaches the boundary. Watch which points become support vectors.","moving_label":1,"moving_color":"blue","steps":[{"moving_pos":[-4.0,0.0],"fit":{"w":[-0.43902439024390244,0.04878048780487805],"b":-0.12195121951219517,"sv":[7,3],"margin":4.527692569068708,"slope":9.0,"intercept":2.500000000000001,"angle_deg":83.6598082540901,"offset":-0.27607881518711647}},{"moving_pos":[-2.0,0.0],"fit":{"w":[-0.5,0.0],"b":-0.0,"sv":[7,9],"margin":4.0,"slope":1000000.0,"intercept":0.0,"angle_deg":90.0,"offset":-0.0}},{"moving_pos":[-0.5,0.0],"fit":{"w":[-0.8,0.0],"b":0.6000000000000001,"sv":[7,9],"margin":2.5,"slope":1000000.0,"intercept":0.0,"angle_deg":90.0,"offset":0.7500000000000001}}],"others":[[-3.0,2.5,1],[-3.5,1.0,1],[-3.0,-2.5,1],[-2.5,0.5,1],[2.5,2.5,-1],[3.0,1.0,-1],[2.5,-2.5,-1],[2.0,0.0,-1],[3.5,-0.5,-1]],"captions":["Step A: The moving point is deep in blue territory. The current support vectors are the closest points to the gap on each side.","Step B: We moved it closer to the boundary. It is now approaching the margin.","Step C: Now it is the closest blue point to the red class \u2014 it has become the leading support vector. A previously-SV point is no longer needed."]}]};
+
+let scenarioIdx = 0;
+let stepIdx = 0;
+let userMode = false;
+let userAngle = 90;
+let userOffset = 0;
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const RANGE = 5;
+const PAD = { l: 36, r: 14, t: 14, b: 34 };
+
+function W() { return canvas.width / (window.devicePixelRatio || 1); }
+function H() { return canvas.height / (window.devicePixelRatio || 1); }
+function pw() { return W() - PAD.l - PAD.r; }
+function ph() { return H() - PAD.t - PAD.b; }
+function sx(x) { return PAD.l + (x + RANGE) / (2 * RANGE) * pw(); }
+function sy(y) { return PAD.t + (1 - (y + RANGE) / (2 * RANGE)) * ph(); }
+
+function getLineParams(angleDeg, offset) {
+  const a = angleDeg * Math.PI / 180;
+  const n0 = -Math.sin(a);
+  const n1 =  Math.cos(a);
+  return { n0, n1, c: offset };
+}
+
+function pointSignedDist(x, y, n0, n1, c) {
+  return n0 * x + n1 * y + c;
+}
+
+function clipLine(n0, n1, c) {
+  const R = RANGE;
+  const candidates = [];
+  if (Math.abs(n1) > 1e-9) {
+    candidates.push([-R, -(n0*(-R) + c)/n1]);
+    candidates.push([ R, -(n0*( R) + c)/n1]);
+  }
+  if (Math.abs(n0) > 1e-9) {
+    candidates.push([-(n1*(-R) + c)/n0, -R]);
+    candidates.push([-(n1*( R) + c)/n0,  R]);
+  }
+  const inside = candidates.filter(p =>
+    p[0] >= -R - 1e-6 && p[0] <= R + 1e-6 &&
+    p[1] >= -R - 1e-6 && p[1] <= R + 1e-6
+  );
+  const uniq = [];
+  for (const p of inside) {
+    if (!uniq.some(q => Math.abs(q[0]-p[0])<1e-4 && Math.abs(q[1]-p[1])<1e-4)) {
+      uniq.push(p);
+    }
+  }
+  if (uniq.length < 2) return null;
+  return [uniq[0], uniq[uniq.length - 1]];
+}
+
+function drawLine(n0, n1, c, color, lw, dash) {
+  const seg = clipLine(n0, n1, c);
+  if (!seg) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  ctx.moveTo(sx(seg[0][0]), sy(seg[0][1]));
+  ctx.lineTo(sx(seg[1][0]), sy(seg[1][1]));
+  ctx.stroke();
+  ctx.restore();
+}
+
+function evaluateLine(angleDeg, offset, scn, movingPos) {
+  const { n0, n1, c } = getLineParams(angleDeg, offset);
+  const allPoints = scn.others.map(p => ({ x: p[0], y: p[1], label: p[2] }));
+  allPoints.push({ x: movingPos[0], y: movingPos[1], label: scn.moving_label });
+
+  let minDistPos = Infinity, minDistNeg = Infinity;
+  let miss = 0;
+  for (const p of allPoints) {
+    const d = pointSignedDist(p.x, p.y, n0, n1, c);
+    if (p.label === +1 && d <= 0) miss++;
+    if (p.label === -1 && d >= 0) miss++;
+    if (p.label === +1 && d > 0)  minDistPos = Math.min(minDistPos, d);
+    if (p.label === -1 && d < 0)  minDistNeg = Math.min(minDistNeg, -d);
+  }
+  let margin = null;
+  if (miss === 0 && isFinite(minDistPos) && isFinite(minDistNeg)) {
+    margin = 2 * Math.min(minDistPos, minDistNeg);
+  }
+  return { miss, margin, n0, n1, c };
+}
+
+function drawGrid() {
+  const w = W(), h = H();
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(PAD.l, PAD.t, pw(), ph());
+  ctx.strokeStyle = '#eef0e8';
+  ctx.lineWidth = 1;
+  for (let v = -RANGE + 1; v < RANGE; v++) {
+    ctx.beginPath(); ctx.moveTo(sx(v), PAD.t); ctx.lineTo(sx(v), H()-PAD.b); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PAD.l, sy(v)); ctx.lineTo(W()-PAD.r, sy(v)); ctx.stroke();
+  }
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(PAD.l, PAD.t, pw(), ph());
+  ctx.strokeStyle = '#c8c8c8';
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, sy(0)); ctx.lineTo(W()-PAD.r, sy(0)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx(0), PAD.t); ctx.lineTo(sx(0), H()-PAD.b); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#666';
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'center';
+  for (let v = -RANGE + 1; v < RANGE; v++) {
+    ctx.fillText(v.toString(), sx(v), H()-PAD.b+16);
+  }
+  ctx.textAlign = 'right';
+  for (let v = -RANGE + 1; v < RANGE; v++) {
+    ctx.fillText(v.toString(), PAD.l-6, sy(v)+4);
+  }
+  ctx.fillStyle = '#444';
+  ctx.font = 'italic bold 15px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('X\u2081', W()/2, H()-4);
+  ctx.save();
+  ctx.translate(14, H()/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('X\u2082', 0, 0);
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawShading(n0, n1, c) {
+  const step = 14;
+  for (let px = PAD.l; px < W()-PAD.r; px += step) {
+    for (let py = PAD.t; py < H()-PAD.b; py += step) {
+      const dx = (px + step/2 - PAD.l) / pw() * (2*RANGE) - RANGE;
+      const dy = RANGE - (py + step/2 - PAD.t) / ph() * (2*RANGE);
+      const f = n0*dx + n1*dy + c;
+      ctx.fillStyle = f > 0 ? 'rgba(0, 99, 167, 0.05)' : 'rgba(148, 27, 34, 0.05)';
+      ctx.fillRect(px, py, step, step);
+    }
+  }
+}
+
+function drawPoint(x, y, label, opts) {
+  opts = opts || {};
+  const px = sx(x), py = sy(y);
+  const blue = '#0063a7';
+  const red  = '#941b22';
+
+  if (opts.isSupportVector) {
+    ctx.beginPath();
+    ctx.arc(px, py, 14, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 195, 0, 0.5)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(220, 150, 0, 0.8)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
+  if (opts.isMoving) {
+    ctx.beginPath();
+    ctx.arc(px, py, 11, 0, Math.PI * 2);
+    ctx.strokeStyle = '#2b8a3e';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
+
+  if (opts.misclassified) {
+    ctx.save();
+    ctx.strokeStyle = '#941b22';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px - 10, py - 10); ctx.lineTo(px + 10, py + 10);
+    ctx.moveTo(px - 10, py + 10); ctx.lineTo(px + 10, py - 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.fillStyle = label === +1 ? blue : red;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  if (label === +1) {
+    ctx.beginPath();
+    ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 8);
+    ctx.lineTo(px + 7, py + 5);
+    ctx.lineTo(px - 7, py + 5);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+}
+
+function drawTrajectory(scn) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(43, 138, 62, 0.35)';
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([3, 4]);
+  const positions = scn.steps.map(s => s.moving_pos);
+  ctx.beginPath();
+  for (let i = 0; i < positions.length; i++) {
+    const [px, py] = [sx(positions[i][0]), sy(positions[i][1])];
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (let i = 0; i < positions.length; i++) {
+    const [px, py] = [sx(positions[i][0]), sy(positions[i][1])];
+    ctx.fillStyle = 'rgba(43, 138, 62, 0.95)';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(String.fromCharCode(65 + i), px + 7, py - 7);
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W(), H());
+
+  const scn = DATA.scenarios[scenarioIdx];
+  const step = scn.steps[stepIdx];
+  const mmFit = step.fit;
+  const movingPos = step.moving_pos;
+
+  let lineN0, lineN1, lineC;
+  let evalResult;
+
+  if (userMode) {
+    const params = getLineParams(userAngle, userOffset);
+    lineN0 = params.n0; lineN1 = params.n1; lineC = params.c;
+    evalResult = evaluateLine(userAngle, userOffset, scn, movingPos);
+  } else {
+    const w0 = mmFit.w[0], w1 = mmFit.w[1], b = mmFit.b;
+    const norm = Math.sqrt(w0*w0 + w1*w1);
+    lineN0 = w0/norm; lineN1 = w1/norm; lineC = b/norm;
+    evalResult = { miss: 0, margin: mmFit.margin, n0: lineN0, n1: lineN1, c: lineC };
+  }
+
+  drawShading(lineN0, lineN1, lineC);
+  drawGrid();
+
+  const allPoints = scn.others.map((p, i) => ({ x: p[0], y: p[1], label: p[2], idx: i }));
+  allPoints.push({ x: movingPos[0], y: movingPos[1], label: scn.moving_label, idx: scn.others.length });
+
+  const missSet = new Set();
+  if (userMode) {
+    for (const p of allPoints) {
+      const d = pointSignedDist(p.x, p.y, lineN0, lineN1, lineC);
+      if ((p.label === +1 && d <= 0) || (p.label === -1 && d >= 0)) {
+        missSet.add(p.idx);
+      }
+    }
+  }
+
+  // Faint MM reference line when in user mode
+  if (userMode) {
+    const w0 = mmFit.w[0], w1 = mmFit.w[1], b = mmFit.b;
+    const norm = Math.sqrt(w0*w0 + w1*w1);
+    drawLine(w0/norm, w1/norm, b/norm, 'rgba(150, 150, 150, 0.55)', 1.5, [3, 4]);
+  }
+
+  if (evalResult.margin !== null) {
+    const halfM = evalResult.margin / 2;
+    drawLine(lineN0, lineN1, lineC - halfM, userMode ? '#b35900' : '#999', 1.4, [6, 5]);
+    drawLine(lineN0, lineN1, lineC + halfM, userMode ? '#b35900' : '#999', 1.4, [6, 5]);
+  }
+
+  drawLine(lineN0, lineN1, lineC, userMode ? '#b35900' : '#222', 2.8, null);
+
+  drawTrajectory(scn);
+
+  const svSet = new Set(userMode ? [] : mmFit.sv);
+  for (const p of allPoints) {
+    drawPoint(p.x, p.y, p.label, {
+      isSupportVector: svSet.has(p.idx),
+      isMoving: p.idx === scn.others.length,
+      misclassified: missSet.has(p.idx),
+    });
+  }
+
+  updateReadouts(evalResult);
+}
+
+function updateReadouts(evalResult) {
+  const angleEl = document.getElementById('angleVal');
+  const offsetEl = document.getElementById('offsetVal');
+  angleEl.textContent = parseFloat(document.getElementById('angleSlider').value).toFixed(1) + '\u00b0';
+  offsetEl.textContent = parseFloat(document.getElementById('offsetSlider').value).toFixed(2);
+  angleEl.classList.toggle('user-active', userMode);
+  offsetEl.classList.toggle('user-active', userMode);
+
+  const chip = document.getElementById('mode-chip');
+  chip.textContent = userMode ? 'Your line' : 'MM';
+  chip.classList.toggle('mm', !userMode);
+  chip.classList.toggle('user', userMode);
+
+  const marginEl = document.getElementById('marginVal');
+  marginEl.classList.remove('invalid', 'user');
+  if (evalResult.miss > 0 || evalResult.margin === null) {
+    marginEl.textContent = '\u2014';
+    marginEl.classList.add('invalid');
+  } else {
+    marginEl.textContent = evalResult.margin.toFixed(2);
+    if (userMode) marginEl.classList.add('user');
+  }
+
+  const missEl = document.getElementById('missVal');
+  missEl.textContent = evalResult.miss.toString();
+  missEl.classList.toggle('bad', evalResult.miss > 0);
+}
+
+function updateCaption() {
+  const scn = DATA.scenarios[scenarioIdx];
+  let txt = scn.captions[stepIdx];
+  if (userMode) {
+    txt = "Adjusting your own line. Try to widen the margin while keeping zero misclassifications. Click \u201cShow MM solution\u201d to compare with the optimal.";
+  }
+  document.getElementById('caption').textContent = txt;
+}
+
+function selectScenario(i) {
+  scenarioIdx = i;
+  stepIdx = 0;
+  userMode = false;
+  document.querySelectorAll('.scn-tab').forEach((b, idx) => {
+    b.classList.toggle('active', idx === i);
+  });
+  syncStepButtons();
+  syncSlidersToMM();
+  updateCaption();
+  draw();
+}
+
+function selectStep(i) {
+  stepIdx = i;
+  userMode = false;
+  syncStepButtons();
+  syncSlidersToMM();
+  updateCaption();
+  draw();
+}
+
+function syncStepButtons() {
+  document.querySelectorAll('.step-btn').forEach((b, idx) => {
+    b.classList.toggle('active', idx === stepIdx);
+  });
+}
+
+function syncSlidersToMM() {
+  const scn = DATA.scenarios[scenarioIdx];
+  const fit = scn.steps[stepIdx].fit;
+  userAngle  = fit.angle_deg;
+  userOffset = fit.offset;
+  document.getElementById('angleSlider').value  = fit.angle_deg;
+  document.getElementById('offsetSlider').value = fit.offset;
+}
+
+function onSliderChange() {
+  userMode = true;
+  userAngle  = parseFloat(document.getElementById('angleSlider').value);
+  userOffset = parseFloat(document.getElementById('offsetSlider').value);
+  updateCaption();
+  draw();
+}
+
+function buildScenarioTabs() {
+  const container = document.getElementById('scn-tabs');
+  container.innerHTML = '';
+  DATA.scenarios.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'scn-tab' + (i === scenarioIdx ? ' active' : '');
+    btn.textContent = s.title;
+    btn.onclick = () => selectScenario(i);
+    container.appendChild(btn);
+  });
+}
+
+function resize() {
+  const totalH = window.innerHeight - 16;
+  const totalW = document.querySelector('.chart-area').getBoundingClientRect().width;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = totalW * dpr;
+  canvas.height = totalH * dpr;
+  canvas.style.width  = totalW + 'px';
+  canvas.style.height = totalH + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+document.querySelectorAll('.step-btn').forEach(btn => {
+  btn.addEventListener('click', () => selectStep(parseInt(btn.dataset.step)));
+});
+document.getElementById('angleSlider').addEventListener('input', onSliderChange);
+document.getElementById('offsetSlider').addEventListener('input', onSliderChange);
+document.getElementById('resetBtn').addEventListener('click', () => {
+  userMode = false;
+  syncSlidersToMM();
+  updateCaption();
+  draw();
+});
+window.addEventListener('resize', resize);
+
+buildScenarioTabs();
+syncStepButtons();
+syncSlidersToMM();
+updateCaption();
+setTimeout(resize, 30);
+</script>
+</body>
+</html>

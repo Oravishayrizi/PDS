@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Network Backpropagation Walkthrough</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:10px 14px 6px;color:#222;background:#fafafa}
+.top-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px}
+.nav-col{width:136px;flex-shrink:0;padding-top:6px}
+.param-col{width:186px;flex-shrink:0}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:1px 8px;margin-bottom:6px;font-size:10px;color:#555}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;flex-shrink:0}
+.step-nav{display:flex;gap:6px;margin-bottom:4px}
+.step-nav button{font-size:12px;padding:4px 11px;cursor:pointer;border:1px solid #ccc;background:#fff;border-radius:4px}
+.step-nav button:disabled{opacity:0.5;cursor:not-allowed}
+.dot-groups{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+.dot-group{display:flex;align-items:center;gap:5px}
+.dg-label{font-size:8.5px;color:#888;width:48px;flex-shrink:0;text-align:right;line-height:1.2}
+.dg-dots{display:flex;gap:4px;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;border:1.5px solid #bbb;background:transparent;transition:all .25s;cursor:pointer}
+.dot.active{background:#185FA5;border-color:#185FA5}
+.dot.done{background:#bbb}
+
+/* param panel */
+.param-panel{border:1px solid #ddd;border-radius:6px;padding:4px 7px;background:#fff}
+.pp-title{font-size:10.5px;font-weight:700;color:#333;margin-bottom:3px}
+.pp-sec{font-size:8.5px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.5px;margin:3px 0 1px}
+.p-row{display:flex;justify-content:between;align-items:center;padding:1px 2px;border-radius:3px;transition:background .2s,color .2s;font-family:monospace;font-size:9.5px;gap:4px}
+.p-row.idle{color:#777}
+.p-row.active{color:#7A4A00;background:#FFF4DE;font-weight:600;border-left:2px solid #BA7517;padding-left:2px}
+.p-row.done{color:#0A5440;background:#EAF6F1}
+.p-name{white-space:nowrap;flex-grow:1}
+.p-val{white-space:nowrap;text-align:right;font-size:9.5px}
+
+/* accumulator */
+.accum-row{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;min-height:22px;padding:3px 10px;margin:5px 0 3px;background:#f5f5f0;border-radius:5px;font-family:monospace;font-size:11px}
+.ac-lbl{font-size:10px;color:#999;flex-shrink:0}
+.ac-err{color:#A32D2D;font-weight:600}
+.ac-dz{color:#534AB7;font-weight:600}
+.ac-grad{color:#BA7517;font-weight:600}
+
+/* labels */
+.step-label{font-size:12.5px;font-weight:600;color:#222;margin-bottom:2px;min-height:16px}
+.upd-hdr{font-size:10.5px;font-family:monospace;color:#BA7517;font-weight:600;min-height:14px;margin-bottom:3px;padding:0 2px}
+
+/* math box */
+.math-box{background:#f5f5f0;border-radius:7px;padding:7px 12px;font-family:monospace;font-size:11.5px;line-height:1.65;color:#222;overflow-x:auto;white-space:pre-wrap;border:1px solid #e0e0d8}
+.fade-in{animation:fi .3s ease}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.hl-b{color:#185FA5;font-weight:500}
+.hl-r{color:#A32D2D;font-weight:500}
+.hl-g{color:#0F6E56;font-weight:500}
+.hl-a{color:#BA7517;font-weight:500}
+.hl-p{color:#534AB7;font-weight:500}
+.ref{opacity:.55;font-size:10.5px}
+</style>
+</head>
+<body>
+
+<div class="top-row">
+  <div class="nav-col">
+    <div class="legend">
+      <span><i style="background:#185FA5"></i>weights</span>
+      <span><i style="background:#0F6E56"></i>activations</span>
+      <span><i style="background:#A32D2D"></i>pred/loss</span>
+      <span><i style="background:#BA7517"></i>gradients</span>
+      <span><i style="background:#534AB7"></i>error flow</span>
+    </div>
+    <div class="step-nav">
+      <button id="btn-prev" onclick="prevStep()">Back</button>
+      <button id="btn-next" onclick="nextStep()">Next</button>
+    </div>
+    <div class="dot-groups" id="dots"></div>
+  </div>
+  <svg id="nn-svg" viewBox="0 -15 680 255" style="flex:1;min-width:0;max-height:195px"></svg>
+  <div class="param-col">
+    <div class="param-panel">
+      <div class="pp-title">All 13 parameters</div>
+      <div class="pp-sec">Output layer (4)</div>
+      <div class="p-row idle" id="pr_w2_0"><span class="p-name">w⁽²⁾₁</span><span class="p-val" id="pv_w2_0">—</span></div>
+      <div class="p-row idle" id="pr_w2_1"><span class="p-name">w⁽²⁾₂</span><span class="p-val" id="pv_w2_1">—</span></div>
+      <div class="p-row idle" id="pr_w2_2"><span class="p-name">w⁽²⁾₃</span><span class="p-val" id="pv_w2_2">—</span></div>
+      <div class="p-row idle" id="pr_b2"><span class="p-name">b⁽²⁾</span><span class="p-val" id="pv_b2">—</span></div>
+      <div class="pp-sec">Hidden layer (9)</div>
+      <div class="p-row idle" id="pr_w1_x1h1"><span class="p-name">w⁽¹⁾₁₁</span><span class="p-val" id="pv_w1_x1h1">—</span></div>
+      <div class="p-row idle" id="pr_w1_x2h1"><span class="p-name">w⁽¹⁾₁₂</span><span class="p-val" id="pv_w1_x2h1">—</span></div>
+      <div class="p-row idle" id="pr_w1_x1h2"><span class="p-name">w⁽¹⁾₂₁</span><span class="p-val" id="pv_w1_x1h2">—</span></div>
+      <div class="p-row idle" id="pr_w1_x2h2"><span class="p-name">w⁽¹⁾₂₂</span><span class="p-val" id="pv_w1_x2h2">—</span></div>
+      <div class="p-row idle" id="pr_w1_x1h3"><span class="p-name">w⁽¹⁾₃₁</span><span class="p-val" id="pv_w1_x1h3">—</span></div>
+      <div class="p-row idle" id="pr_w1_x2h3"><span class="p-name">w⁽¹⁾₃₂</span><span class="p-val" id="pv_w1_x2h3">—</span></div>
+      <div class="p-row idle" id="pr_b1_h1"><span class="p-name">b⁽¹⁾₁</span><span class="p-val" id="pv_b1_h1">—</span></div>
+      <div class="p-row idle" id="pr_b1_h2"><span class="p-name">b⁽¹⁾₂</span><span class="p-val" id="pv_b1_h2">—</span></div>
+      <div class="p-row idle" id="pr_b1_h3"><span class="p-name">b⁽¹⁾₃</span><span class="p-val" id="pv_b1_h3">—</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="step-label" id="step-label"></div>
+<div class="upd-hdr" id="upd-hdr"></div>
+<div class="math-box fade-in" id="math-box"></div>
+
+<script>
+const f3=v=>v.toFixed(3), f4=v=>v.toFixed(4);
+function sig(z){return 1/(1+Math.exp(-z))}
+function sigD(a){return a*(1-a)}
+function fSum(vals,dp=4){
+  return vals.map((v,i)=>i===0?v.toFixed(dp):(v>=0?` + ${v.toFixed(dp)}`:`\u2212 ${Math.abs(v).toFixed(dp)}`)).join('');
+}
+
+// ── notation helpers ──────────────────────────────────────
+const S_ = ['\u2081','\u2082','\u2083']; // ₁₂₃
+const w1n = 'w\u207d\u00b9\u207e';       // w⁽¹⁾
+const w2n = 'w\u207d\u00b2\u207e';       // w⁽²⁾
+const B1  = 'b\u207d\u00b9\u207e';       // b⁽¹⁾
+const B2  = 'b\u207d\u00b2\u207e';       // b⁽²⁾
+
+// ── data ──────────────────────────────────────────────────
+const xv=[-1.124,-1.223], yt=0;
+const W1=[[0.248,-0.069,0.324],[0.762,-0.117,0.150]]; // Changed value from -0.117 to 0.150
+const b1=[0,0,0];
+const W2=[0.790,0.384,-0.235], b2=0, lr=0.5;
+
+// ── forward pass ──────────────────────────────────────────
+const z1=[],a1=[];
+for(let j=0;j<3;j++){let s=b1[j];for(let i=0;i<2;i++)s+=xv[i]*W1[i][j];z1.push(s);a1.push(sig(s))}
+let z2=b2; for(let j=0;j<3;j++) z2+=a1[j]*W2[j];
+const a2=sig(z2);
+const loss=-(yt*Math.log(a2+1e-8)+(1-yt)*Math.log(1-a2+1e-8));
+const dz2=a2-yt;
+
+// ── gradients ─────────────────────────────────────────────
+const dW2=a1.map(a=>a*dz2), db2g=dz2;
+const sd1=a1.map(a=>sigD(a));
+const dz1=W2.map((w,j)=>dz2*w*sd1[j]);
+const dW1=[[],[]];
+for(let i=0;i<2;i++) for(let j=0;j<3;j++) dW1[i].push(xv[i]*dz1[j]);
+const db1g=[...dz1];
+
+// ── updates ───────────────────────────────────────────────
+const W2n=W2.map((w,j)=>w-lr*dW2[j]), b2n=b2-lr*db2g;
+const W1n=[[],[]];
+for(let i=0;i<2;i++) for(let j=0;j<3;j++) W1n[i].push(W1[i][j]-lr*dW1[i][j]);
+const b1n=b1.map((b,j)=>b-lr*db1g[j]);
+
+// ── SVG drawing ───────────────────────────────────────────
+const COL={
+  i:{f:'#E6F1FB',s:'#185FA5',t:'#0C447C'},
+  h:{f:'#d4edda',s:'#0F6E56',t:'#085041'},
+  o:{f:'#f0d6d6',s:'#A32D2D',t:'#712B13'},
+  blue:'#185FA5', amber:'#BA7517', purple:'#534AB7', grey:'#888'
+};
+const P={i0:{x:80,y:60},i1:{x:80,y:150},h0:{x:300,y:15},h1:{x:300,y:105},h2:{x:300,y:195},o0:{x:540,y:105}};
+const NW=70,NH=40,NR=8;
+
+function draw(svg,hE,nV,eL,bE,fE,pE){
+  let h=`<defs><marker id="aw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker><marker id="ab" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M8 1L2 5L8 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>`;
+  const ef=[];
+  for(let i=0;i<2;i++) for(let j=0;j<3;j++) ef.push({from:`i${i}`,to:`h${j}`,k:`w1_${i}_${j}`});
+  for(let j=0;j<3;j++) ef.push({from:`h${j}`,to:'o0',k:`w2_${j}`});
+  ef.forEach(e=>{
+    const fp=P[e.from],tp=P[e.to];
+    const x1=fp.x+NW,y1=fp.y+NH/2,x2=tp.x,y2=tp.y+NH/2;
+    const isH=hE?.includes(e.k),isB=bE?.includes(e.k),isF=fE?.includes(e.k),isP=pE?.includes(e.k);
+    const hasAny=hE||bE||fE||pE,isAny=isH||isB||isF||isP;
+    const col=isB?COL.amber:isP?COL.purple:(isH||isF)?COL.blue:COL.grey;
+    const w=isAny?2.5:0.8, op=(hasAny&&!isAny)?0.1:isAny?0.85:0.45;
+    const ma=(isB||isP)?'marker-start="url(#ab)"':'marker-end="url(#aw)"';
+    h+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${w}" opacity="${op}" ${ma}/>`;
+    if(eL?.[e.k]!==undefined){
+      const lf=e.k.startsWith('w1_')?0.28:0.50;
+      const mx=x1*(1-lf)+x2*lf, my=y1*(1-lf)+y2*lf;
+      h+=`<text x="${mx}" y="${my-7}" text-anchor="middle" font-size="9.5" font-family="monospace" fill="${col}" font-weight="500">${eL[e.k]}</text>`;
+    }
+  });
+  [{ks:['i0','i1'],c:COL.i,l:'Input'},{ks:['h0','h1','h2'],c:COL.h,l:'Hidden (sigmoid)'},{ks:['o0'],c:COL.o,l:'Output (sigmoid)'}].forEach(ly=>{
+    const minY=Math.min(...ly.ks.map(k=>P[k].y));
+    h+=`<text x="${P[ly.ks[0]].x+NW/2}" y="${minY-14}" text-anchor="middle" font-size="11" fill="${ly.c.t}" font-weight="500">${ly.l}</text>`;
+    ly.ks.forEach(k=>{
+      const p=P[k];
+      h+=`<rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="${NR}" fill="${ly.c.f}" stroke="${ly.c.s}" stroke-width="1"/>`;
+      const v=nV?.[k];
+      if(v){
+        if(v.top) h+=`<text x="${p.x+NW/2}" y="${p.y+18}" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="${ly.c.t}">${v.top}</text>`;
+        if(v.bot!=null) h+=`<text x="${p.x+NW/2}" y="${p.y+35}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" font-family="monospace" fill="${ly.c.t}">${v.bot}</text>`;
+        if(!v.top&&v.bot==null&&v.label) h+=`<text x="${p.x+NW/2}" y="${p.y+NH/2}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="${ly.c.t}">${v.label}</text>`;
+      }
+    });
+  });
+  svg.innerHTML=h;
+}
+
+// ── node value presets ────────────────────────────────────
+const NV_ARCH={i0:{top:'petal length'},i1:{top:'petal width'},h0:{label:'h\u2081'},h1:{label:'h\u2082'},h2:{label:'h\u2083'},o0:{label:'P(versi.)'}};
+const NV_LOADED={i0:{top:'x\u2081',bot:f3(xv[0])},i1:{top:'x\u2082',bot:f3(xv[1])},h0:{label:'h\u2081'},h1:{label:'h\u2082'},h2:{label:'h\u2083'},o0:{label:'P(versi.)'}};
+const NV_FWD={i0:{top:'x\u2081',bot:f3(xv[0])},i1:{top:'x\u2082',bot:f3(xv[1])},h0:{top:'h\u2081',bot:f4(a1[0])},h1:{top:'h\u2082',bot:f4(a1[1])},h2:{top:'h\u2083',bot:f4(a1[2])},o0:{top:'\u0177',bot:f4(a2)}};
+function nvB(filled){
+  const nv={i0:{top:'x\u2081',bot:f3(xv[0])},i1:{top:'x\u2082',bot:f3(xv[1])},o0:{label:'P(versi.)'}};
+  for(let j=0;j<3;j++) nv[`h${j}`]=filled.includes(j)?{top:`h${S_[j]}`,bot:f4(a1[j])}:{label:`h${S_[j]}`};
+  return nv;
+}
+
+// ── param state ───────────────────────────────────────────
+const PDEF={
+  w2_0:{s:'idle',v:'0.790'},   w2_1:{s:'idle',v:'0.384'},
+  w2_2:{s:'idle',v:'\u22120.235'}, b2:{s:'idle',v:'0.000'},
+  w1_x1h1:{s:'idle',v:'0.248'},  w1_x2h1:{s:'idle',v:'0.762'},
+  w1_x1h2:{s:'idle',v:'\u22120.069'}, w1_x2h2:{s:'idle',v:'\u22120.117'},
+  w1_x1h3:{s:'idle',v:'0.324'},  w1_x2h3:{s:'idle',v:'0.150'},
+  b1_h1:{s:'idle',v:'0.000'}, b1_h2:{s:'idle',v:'0.000'}, b1_h3:{s:'idle',v:'0.000'}
+};
+const PEMPTY={};
+Object.keys(PDEF).forEach(k=>{PEMPTY[k]={s:'idle',v:'\u2014'}});
+
+const doneOut={
+  w2_0:{s:'done',v:f3(W2n[0])}, w2_1:{s:'done',v:f3(W2n[1])},
+  w2_2:{s:'done',v:f3(W2n[2])}, b2:{s:'done',v:f3(b2n)}
+};
+const activeW1={
+  w1_x1h1:{s:'active',v:`0.248\u2192${f3(W1n[0][0])}`},
+  w1_x2h1:{s:'active',v:`0.762\u2192${f3(W1n[1][0])}`},
+  w1_x1h2:{s:'active',v:`\u22120.069\u2192${f3(W1n[0][1])}`},
+  w1_x2h2:{s:'active',v:`\u22120.117\u2192${f3(W1n[1][1])}`},
+  w1_x1h3:{s:'active',v:`0.324\u2192${f3(W1n[0][2])}`},
+  w1_x2h3:{s:'active',v:`0.150\u2192${f3(W1n[1][2])}`}
+};
+const doneW1={
+  w1_x1h1:{s:'done',v:f3(W1n[0][0])}, w1_x2h1:{s:'done',v:f3(W1n[1][0])},
+  w1_x1h2:{s:'done',v:f3(W1n[0][1])}, w1_x2h2:{s:'done',v:f3(W1n[1][1])},
+  w1_x1h3:{s:'done',v:f3(W1n[0][2])}, w1_x2h3:{s:'done',v:f3(W1n[1][2])}
+};
+const doneB1={
+  b1_h1:{s:'done',v:f3(b1n[0])}, b1_h2:{s:'done',v:f3(b1n[1])}, b1_h3:{s:'done',v:f3(b1n[2])}
+};
+
+const PSTATES=[
+  PEMPTY, // S0: empty architecture view
+  PDEF,   // S1: values rendered immediately upon initialization step
+  PDEF,PDEF,PDEF,PDEF,PDEF,PDEF,PDEF, // S2-S8
+  PDEF,   // S9
+  PDEF,   // S10 (3.4)
+  {w2_0:{s:'active',v:`0.790\u2192${f3(W2n[0])}`}}, // S10 (4.1)
+  {w2_0:{s:'done',v:f3(W2n[0])}, w2_1:{s:'active',v:`0.384\u2192${f3(W2n[1])}`}, w2_2:{s:'active',v:`\u22120.235\u2192${f3(W2n[2])}`}}, // S11 (4.2)
+  {w2_0:{s:'done',v:f3(W2n[0])},w2_1:{s:'done',v:f3(W2n[1])},w2_2:{s:'done',v:f3(W2n[2])},b2:{s:'active',v:`0.000\u2192${f3(b2n)}`}}, // S12 (4.3)
+  {...PDEF, ...activeW1}, // S13 (4.4): Keep previous output parameters idle during layer 1 evaluation step
+  {...doneOut, ...doneW1, ...doneB1} // S14 (4.5)
+];
+
+// ── accumulator ───────────────────────────────────────────
+const errItem    = {cls:'ac-err',  txt:`error=${f4(dz2)}`};
+const outGradRef = {cls:'ac-grad', txt:'\u2202w\u207d\u00b2\u207e \u21913.2', step:8};
+const esItems    = [
+  {cls:'ac-dz',  txt:`es(h\u2081)=${f4(dz1[0])}`},
+  {cls:'ac-dz',  txt:`es(h\u2082)=${f4(dz1[1])}`},
+  {cls:'ac-dz',  txt:`es(h\u2083)=${f4(dz1[2])}`},
+];
+const hidGradRef = {cls:'ac-grad', txt:'\u2202w\u207d\u00b9\u207e \u21913.4', step:10};
+const ACCUM=[
+  [],[],[],[],[],[],[],                          // S0-S6
+  [errItem],                                     // S7: output error
+  [errItem,outGradRef],                          // S8: output grads computed
+  [errItem,outGradRef,...esItems],               // S9: + hidden error signals
+  [outGradRef,...esItems,hidGradRef],            // S10: + hidden grads computed
+  [outGradRef,hidGradRef],                       // S11-S15: step references only
+  [outGradRef,hidGradRef],
+  [outGradRef,hidGradRef],
+  [outGradRef,hidGradRef],
+  [outGradRef,hidGradRef],
+];
+
+// ── updating header ───────────────────────────────────────
+const UPDHDR=[
+  '','','','','','','','','','','',
+  `Updating: ${w2n}${S_[0]}  —  output layer, 1 of 4`,
+  `Updating: ${w2n}${S_[1]}  ·  ${w2n}${S_[2]}  —  output layer, 2–3 of 4`,
+  `Updating: ${B2}  —  output layer, 4 of 4`,
+  `Updating: ${w1n} weights  —  hidden layer, 1–6 of 9`,
+  `Updating: ${B1}  —  hidden layer, 7–9 of 9`
+];
+
+// ── steps ─────────────────────────────────────────────────
+const STEPS=[
+// S0
+{t:'The architecture',
+ nV:NV_ARCH,
+ m:`Our network:  2 inputs \u2192 3 hidden nodes \u2192 1 output
+
+Every arrow carries a <span class="hl-b">weight</span>. Every node computes:
+  z = (inputs \u00d7 weights) + bias,  then  a = sigmoid(z)
+
+To classify Iris flowers, the network needs to learn <span class="hl-b">13 parameters</span>.
+The panel on the right tracks their active states.`},
+
+// S1
+{t:'Initialize weights randomly',
+ nV:NV_ARCH,
+ m:`All 13 parameters are <span class="hl-b">randomly initialized</span> before training.
+This breaks symmetry so each hidden node learns something different.
+
+Here are the values we will use throughout this walkthrough:
+
+  Output layer:
+    <span class="hl-b">${w2n}${S_[0]}</span> = <span class="hl-b"> 0.790</span>   <span class="hl-b">${w2n}${S_[1]}</span> = <span class="hl-b"> 0.384</span>   <span class="hl-b">${w2n}${S_[2]}</span> = <span class="hl-b">\u22120.235</span>   <span class="hl-b">${B2}</span> = <span class="hl-b">0.000</span>
+
+  Hidden layer weights into each node:
+    h\u2081:  <span class="hl-b">${w1n}\u2081\u2081</span> = <span class="hl-b"> 0.248</span>   <span class="hl-b">${w1n}\u2081\u2082</span> = <span class="hl-b"> 0.762</span>
+    h\u2082:  <span class="hl-b">${w1n}\u2082\u2081</span> = <span class="hl-b">\u22120.069</span>  <span class="hl-b">${w1n}\u2082\u2082</span> = <span class="hl-b">\u22120.117</span>
+    h\u2083:  <span class="hl-b">${w1n}\u2083\u2081</span> = <span class="hl-b"> 0.324</span>   <span class="hl-b">${w1n}\u2083\u2082</span> = <span class="hl-b"> 0.150</span>
+    <span class="hl-b">${B1}\u2081</span> = <span class="hl-b">${B1}\u2082</span> = <span class="hl-b">${B1}\u2083</span> = <span class="hl-b">0.000</span>`},
+
+// S2
+{t:'Load sample',
+ nV:NV_LOADED,
+ m:`One Iris flower (standardized measurements):
+
+  <span class="hl-b">x\u2081</span> (petal length) = <span class="hl-b">\u22121.124</span>
+  <span class="hl-b">x\u2082</span> (petal width)  = <span class="hl-b">\u22121.223</span>
+
+True label:  y = 0  (not Versicolor)
+
+We run one complete forward \u2192 loss \u2192 backward \u2192 update cycle.`},
+
+// S3
+{t:'1.1 Forward  ·  x \u2192 h\u2081',
+ hE:['w1_0_0','w1_1_0'],
+ eL:{w1_0_0:'\u00d70.248',w1_1_0:'\u00d70.762'},
+ nV:{...nvB([0]),h0:{top:`h\u2081 (+0.000)`,bot:f4(a1[0])}},
+ m:`Each hidden node:  z = x\u2081\u00d7w + x\u2082\u00d7w + bias,  then  h = sigmoid(z)
+
+  z\u2081 = (<span class="hl-b">\u22121.124</span>\u00d7<span class="hl-b">${w1n}\u2081\u2081</span>) + (<span class="hl-b">\u22121.223</span>\u00d7<span class="hl-b">${w1n}\u2081\u2082</span>) + <span class="hl-b">${B1}\u2081</span>
+     = (\u22121.124\u00d70.248) + (\u22121.223\u00d70.762) + 0.000
+     = \u22120.279 + (\u22120.932) + 0.000  =  ${f4(z1[0])}
+
+  <span class="hl-g">h\u2081</span> = sigmoid(${f4(z1[0])}) = <span class="hl-g">${f4(a1[0])}</span>`},
+
+// S4
+{t:'1.2 Forward  ·  x \u2192 h\u2082 and h\u2083',
+ hE:['w1_0_1','w1_1_1','w1_0_2','w1_1_2'],
+ eL:{w1_0_1:'\u00d7\u22120.069',w1_1_1:'\u00d7\u22120.117',w1_0_2:'\u00d70.324',w1_1_2:'\u00d70.150'},
+ nV:{...nvB([0,1,2]),h1:{top:`h\u2082 (+0.000)`,bot:f4(a1[1])},h2:{top:`h\u2083 (+0.000)`,bot:f4(a1[2])}},
+ m:`Same computation for h\u2082 and h\u2083:
+
+  z\u2082 = (\u22121.124\u00d7\u22120.069) + (\u22121.223\u00d7\u22120.117) + 0.000 = ${f4(z1[1])}
+  <span class="hl-g">h\u2082</span> = sigmoid(${f4(z1[1])}) = <span class="hl-g">${f4(a1[1])}</span>
+
+  z\u2083 = (\u22121.124\u00d70.324) + (\u22121.223\u00d70.150) + 0.000 = ${f4(z1[2])}
+  <span class="hl-g">h\u2083</span> = sigmoid(${f4(z1[2])}) = <span class="hl-g">${f4(a1[2])}</span>`},
+
+// S5
+{t:'1.3 Forward  ·  h \u2192 \u0177',
+ hE:['w2_0','w2_1','w2_2'],
+ eL:{w2_0:`\u00d70.790`,w2_1:`\u00d70.384`,w2_2:`\u00d7\u22120.235`},
+ nV:{...NV_FWD,o0:{top:`\u0177 (+0.000)`,bot:f4(a2)}},
+ m:`The output node values compute logistic regression across hidden node vectors:
+
+  \u0177 = sigmoid( <span class="hl-g">h\u2081</span>\u00d7<span class="hl-b">${w2n}${S_[0]}</span> + <span class="hl-g">h\u2082</span>\u00d7<span class="hl-b">${w2n}${S_[1]}</span> + <span class="hl-g">h\u2083</span>\u00d7<span class="hl-b">${w2n}${S_[2]}</span> + <span class="hl-b">${B2}</span> )
+    = sigmoid( <span class="hl-g">${f4(a1[0])}</span>\u00d7<span class="hl-b">0.790</span> + <span class="hl-g">${f4(a1[1])}</span>\u00d7<span class="hl-b">0.384</span> + <span class="hl-g">${f4(a1[2])}</span>\u00d7<span class="hl-b">(\u22120.235)</span> + <span class="hl-b">0.000</span> )
+    = sigmoid( ${fSum([a1[0]*W2[0],a1[1]*W2[1],a1[2]*W2[2],b2])} )
+    = sigmoid( ${f4(z2)} )
+    = <span class="hl-r">${f4(a2)}</span>
+
+Predicted P(Versicolor) = <span class="hl-r">${f4(a2)}</span>  \u2192  class ${a2>0.5?1:0}   \u2717 wrong`},
+
+// S6
+{t:'2. Loss',
+ nV:NV_FWD,
+ m:`Binary cross-entropy:
+
+  L = \u2212( y\u00d7log(\u0177) + (1\u2212y)\u00d7log(1\u2212\u0177) )
+    = \u2212( 0\u00d7log(${f4(a2)}) + 1\u00d7log(${f4(1-a2)}) )
+    = \u2212log(${f4(1-a2)}) = <span class="hl-r">${f4(loss)}</span>
+
+<span class="ref">Diagram values are frozen from here on — they are our backpropagation reference.</span>`},
+
+// S7
+{t:'3.1 Backward  ·  error signal',
+ nV:NV_FWD,
+ m:`<span class="hl-p">error</span>  =  \u0177 \u2212 y  =  <span class="hl-r">${f4(a2)}</span> \u2212 0  =  <span class="hl-p">${f4(dz2)}</span>
+
+Positive value implies prediction was too high. This error flows backward.
+<span class="ref">ŷ ← step 1.3  ·  y = true label (loaded at step 1)</span>`},
+
+// S8
+{t:'3.2 Backward  ·  output layer gradient',
+ bE:['w2_0','w2_1','w2_2'],
+ eL:{w2_0:`∂:${f3(dW2[0])}`,w2_1:`∂:${f3(dW2[1])}`,w2_2:`∂:${f3(dW2[2])}`},
+ nV:NV_FWD,
+ m:`How much did each output weight contribute to the final error?
+
+  <span class="hl-a">∂L/∂${w2n}${S_[0]}</span>  =  <span class="hl-g">h\u2081</span>  \u00d7  <span class="hl-p">error</span>  =  <span class="hl-g">${f4(a1[0])}</span> \u00d7 <span class="hl-p">${f4(dz2)}</span>  =  <span class="hl-a">${f4(dW2[0])}</span>
+  <span class="hl-a">∂L/∂${w2n}${S_[1]}</span>  =  <span class="hl-g">h\u2082</span>  \u00d7  <span class="hl-p">error</span>  =  <span class="hl-g">${f4(a1[1])}</span> \u00d7 <span class="hl-p">${f4(dz2)}</span>  =  <span class="hl-a">${f4(dW2[1])}</span>
+  <span class="hl-a">∂L/∂${w2n}${S_[2]}</span>  =  <span class="hl-g">h\u2083</span>  \u00d7  <span class="hl-p">error</span>  =  <span class="hl-g">${f4(a1[2])}</span> \u00d7 <span class="hl-p">${f4(dz2)}</span>  =  <span class="hl-a">${f4(dW2[2])}</span>
+
+  <span class="hl-a">∂L/∂${B2}</span>  =  <span class="hl-p">error</span>  =  <span class="hl-a">${f4(db2g)}</span>
+<span class="ref">error ← 3.1  ·  h₁,h₂,h₃ ← 1.1–1.2  ·  w⁽²⁾ ← initialized (step 0)</span>`},
+
+// S9
+{t:'3.3 Backward  ·  hidden layer gradient',
+ fE:['w2_0','w2_1','w2_2'],
+ eL:{w2_0:`×${f3(W2[0])}`,w2_1:`×${f3(W2[1])}`,w2_2:`×${f3(W2[2])}`},
+ nV:NV_FWD,
+ m:`The <span class="hl-p">error</span> flows back through each connecting weight, squeezed by the hidden sigmoid:
+
+  error signal at h_j  =  <span class="hl-p">error</span> × <span class="hl-b">${w2n}_j</span> × <span class="hl-g">h_j×(1−h_j)</span>
+
+  error signal at h₁ = <span class="hl-p">${f4(dz2)}</span> × <span class="hl-b">${f3(W2[0])}</span> × <span class="hl-g">(${f4(a1[0])}×${f4(1-a1[0])})</span> = <span class="hl-p">${f4(dz1[0])}</span>
+  error signal at h₂ = <span class="hl-p">${f4(dz2)}</span> × <span class="hl-b">${f3(W2[1])}</span> × <span class="hl-g">(${f4(a1[1])}×${f4(1-a1[1])})</span> = <span class="hl-p">${f4(dz1[1])}</span>
+  error signal at h₃ = <span class="hl-p">${f4(dz2)}</span> × (<span class="hl-b">${f3(W2[2])}</span>) × <span class="hl-g">(${f4(a1[2])}×${f4(1-a1[2])})</span> = <span class="hl-p">${f4(dz1[2])}</span>
+<span class="ref">error ← 3.1  ·  w⁽²⁾ ← initialized (step 0)  ·  h_j×(1−h_j) ← 1.1–1.2</span>`},
+// S10 (3.4)
+{t:'3.4 Backward  \u00b7  hidden layer gradients',
+ nV:NV_FWD,
+ m:`\u2202L/\u2202${w1n}_{ij}  =  (error signal at h_j) \u00d7 x_i
+
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2081\u2081</span> = <span class="hl-p">${f4(dz1[0])}</span> \u00d7 <span class="hl-b">${f3(xv[0])}</span> = <span class="hl-a">${f4(dW1[0][0])}</span>
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2081\u2082</span> = <span class="hl-p">${f4(dz1[0])}</span> \u00d7 <span class="hl-b">${f3(xv[1])}</span> = <span class="hl-a">${f4(dW1[1][0])}</span>
+
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2082\u2081</span> = <span class="hl-p">${f4(dz1[1])}</span> \u00d7 <span class="hl-b">${f3(xv[0])}</span> = <span class="hl-a">${f4(dW1[0][1])}</span>
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2082\u2082</span> = <span class="hl-p">${f4(dz1[1])}</span> \u00d7 <span class="hl-b">${f3(xv[1])}</span> = <span class="hl-a">${f4(dW1[1][1])}</span>
+
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2083\u2081</span> = <span class="hl-p">${f4(dz1[2])}</span> \u00d7 <span class="hl-b">${f3(xv[0])}</span> = <span class="hl-a">${f4(dW1[0][2])}</span>
+  <span class="hl-a">\u2202L/\u2202${w1n}\u2083\u2082</span> = <span class="hl-p">${f4(dz1[2])}</span> \u00d7 <span class="hl-b">${f3(xv[1])}</span> = <span class="hl-a">${f4(dW1[1][2])}</span>
+<span class="ref">error signals at h_j ← 3.3  ·  x₁, x₂ ← loaded at step 1</span>`},
+
+// S10
+{t:'4.1 Update  ·  w⁽²⁾₁',
+ hE:['w2_0'],
+ eL:{w2_0:`${f3(W2[0])}\u2192${f3(W2n[0])}`},
+ nV:NV_FWD,
+ m:`Apply weight update:  W_new = W_old \u2212 lr \u00d7 gradient
+
+  <span class="hl-b">${w2n}${S_[0]}</span>:  ${f3(W2[0])} \u2212 0.5 \u00d7 <span class="hl-a">${f4(dW2[0])}</span>  =  <span class="hl-b">${f3(W2n[0])}</span>
+<span class="ref">∂L/∂w⁽²⁾ ← 3.2</span>`},
+
+// S11
+{t:'4.2 Update  ·  w⁽²⁾₂  and  w⁽²⁾₃',
+ hE:['w2_1','w2_2'],
+ eL:{w2_1:`${f3(W2[1])}\u2192${f3(W2n[1])}`,w2_2:`${f3(W2[2])}\u2192${f3(W2n[2])}`},
+ nV:NV_FWD,
+ m:`Same update rule applied to the remaining output connection paths:
+
+  <span class="hl-b">${w2n}${S_[1]}</span>:  ${f3(W2[1])} \u2212 0.5 \u00d7 <span class="hl-a">${f4(dW2[1])}</span>  =  <span class="hl-b">${f3(W2n[1])}</span>
+  <span class="hl-b">${w2n}${S_[2]}</span>:  ${f3(W2[2])} \u2212 0.5 \u00d7 (<span class="hl-a">${f4(dW2[2])}</span>)  =  <span class="hl-b">${f3(W2n[2])}</span>
+<span class="ref">∂L/∂w⁽²⁾ ← 3.2</span>`},
+
+// S12
+{t:'4.3 Update  ·  b⁽²⁾',
+ nV:NV_FWD,
+ m:`Biases have no dynamic input value scaling them, gradient corresponds to error directly:
+
+  <span class="hl-b">${B2}</span>:  0.000 \u2212 0.5 \u00d7 <span class="hl-a">${f4(db2g)}</span>  =  <span class="hl-b">${f3(b2n)}</span>
+<span class="ref">∂L/∂b⁽²⁾ ← 3.2</span>`},
+
+// S13
+{t:'4.4 Update  ·  w⁽¹⁾ weights',
+ bE:['w1_0_0','w1_1_0','w1_0_1','w1_1_1','w1_0_2','w1_1_2'],
+ nV:NV_FWD,
+ m:`Apply update rule to all 6 hidden weights:  w_new = w_old \u2212 lr × \u2202L/\u2202w
+
+  es(h\u2081)=${f4(dz1[0])}: <span class="hl-b">${w1n}₁₁</span>\u2192${f3(W1n[0][0])} , <span class="hl-b">${w1n}₁₂</span>\u2192${f3(W1n[1][0])}
+  es(h\u2082)=${f4(dz1[1])}: <span class="hl-b">${w1n}₂₁</span>\u2192${f3(W1n[0][1])} , <span class="hl-b">${w1n}₂₂</span>\u2192${f3(W1n[1][1])}
+  es(h\u2083)=${f4(dz1[2])}: <span class="hl-b">${w1n}₃₁</span>\u2192${f3(W1n[0][2])} , <span class="hl-b">${w1n}₃₂</span>\u2192${f3(W1n[1][2])}
+<span class="ref">∂L/∂w⁽¹⁾ ← 3.4</span>`},
+
+// S14
+{t:'4.5 Update  ·  b⁽¹⁾  —  all done!',
+ nV:NV_FWD,
+ m:`Hidden biases: gradient = error signal at h_j directly:
+
+  <span class="hl-b">${B1}₁</span>: 0.000 \u2212 0.5 \u00d7 <span class="hl-a">${f4(db1g[0])}</span>  =  <span class="hl-b">${f3(b1n[0])}</span>
+  <span class="hl-b">${B1}₂</span>: 0.000 \u2212 0.5 \u00d7 <span class="hl-a">${f4(db1g[1])}</span>  =  <span class="hl-b">${f3(b1n[1])}</span>
+  <span class="hl-b">${B1}₃</span>: 0.000 \u2212 0.5 \u00d7 (<span class="hl-a">${f4(db1g[2])}</span>) =  <span class="hl-b">${f3(b1n[2])}</span>
+<span class="ref">error signals at h_j ← 3.3</span>`}
+];
+
+// ── render ────────────────────────────────────────────────
+let cur=0;
+
+function renderParams(i){
+  const ov=PSTATES[i]||{};
+  Object.keys(PDEF).forEach(k=>{
+    const st=ov[k]||PDEF[k];
+    const row=document.getElementById('pr_'+k);
+    const val=document.getElementById('pv_'+k);
+    if(row) row.className='p-row '+st.s;
+    if(val) val.textContent=st.v;
+  });
+}
+
+function renderAccum(i){
+  const items=ACCUM[i]||[];
+  const el=document.getElementById('accum');
+  el.innerHTML='<span class="ac-lbl">computed:\u2002</span>';
+  items.forEach(it=>{
+    const s=document.createElement('span');
+    s.className=it.cls; s.textContent=it.txt;
+    if(it.step!==undefined){
+      s.style.cssText='cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px';
+      s.title='jump to step '+it.step; s.onclick=()=>render(it.step);
+    }
+    el.appendChild(s);
+  });
+}
+
+function render(i){
+  cur=i;
+  const s=STEPS[i];
+  const svg=document.getElementById('nn-svg');
+  if(s.hide_svg) svg.style.display='none';
+  else{ svg.style.display=''; draw(svg,s.hE||null,s.nV||null,s.eL||null,s.bE||null,s.fE||null,s.pE||null); }
+  document.getElementById('step-label').textContent=s.t;
+  document.getElementById('upd-hdr').textContent=UPDHDR[i]||'';
+  const mb=document.getElementById('math-box');
+  mb.innerHTML=s.m; mb.className='math-box fade-in';
+  renderParams(i);
+  GROUPS.forEach(g=>g.steps.forEach(s=>{
+    const d=document.getElementById(`dot_${s}`);
+    if(d) d.className='dot'+(s===i?' active':s<i?' done':'');
+  }));
+  document.getElementById('btn-prev').disabled=i===0;
+  document.getElementById('btn-next').disabled=i===STEPS.length-1;
+}
+
+function nextStep(){if(cur<STEPS.length-1) render(cur+1)}
+function prevStep(){if(cur>0) render(cur-1)}
+
+const GROUPS=[
+  {label:'Setup',    steps:[0,1,2]},
+  {label:'Forward',  steps:[3,4,5]},
+  {label:'Loss',     steps:[6]},
+  {label:'Backward', steps:[7,8,9,10]},
+  {label:'Update',   steps:[11,12,13,14,15]},
+];
+const de=document.getElementById('dots');
+GROUPS.forEach(g=>{
+  const row=document.createElement('div');
+  row.className='dot-group';
+  const lbl=document.createElement('span');
+  lbl.className='dg-label'; lbl.textContent=g.label;
+  row.appendChild(lbl);
+  const dc=document.createElement('div');
+  dc.className='dg-dots';
+  g.steps.forEach(i=>{
+    const d=document.createElement('div');
+    d.className='dot'; d.id=`dot_${i}`; d.onclick=()=>render(i);
+    d.title=STEPS[i].t;
+    dc.appendChild(d);
+  });
+  row.appendChild(dc);
+  de.appendChild(row);
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();nextStep()}
+  if(e.key==='ArrowLeft'){e.preventDefault();prevStep()}
+});
+
+render(0);
+</script>
+</body>
+</html>
