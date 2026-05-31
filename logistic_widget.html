@@ -260,22 +260,25 @@ function drawPanel(canvasId, b0, b1, mode) {
   ctx.fillText('p\u0302(X)', 0, 0);
   ctx.restore();
 
-  // MSE display
-  let mse = 0;
+  // Metric display
+  let metricVal = 0;
   for (let i = 0; i < N; i++) {
     let pred;
     if (mode === 'lpm') {
       pred = b0 + b1 * dataX[i];
+      metricVal += (dataY[i] - pred) ** 2;
     } else {
       pred = 1 / (1 + Math.exp(-(b0 + b1 * dataX[i])));
+      const p = Math.min(Math.max(pred, 1e-10), 1 - 1e-10);
+      metricVal -= dataY[i] * Math.log(p) + (1 - dataY[i]) * Math.log(1 - p);
     }
-    mse += (dataY[i] - pred) ** 2;
   }
-  mse /= N;
+  metricVal /= N;
   ctx.fillStyle = color;
   ctx.font = 'bold 12px -apple-system, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('MSE = ' + mse.toFixed(4), margin.left + 8, margin.top + 14);
+  const metricLabel = mode === 'lpm' ? 'MSE' : 'Log Loss';
+  ctx.fillText(metricLabel + ' = ' + metricVal.toFixed(4), margin.left + 8, margin.top + 14);
 
   // Point legend
   const lx = W - margin.right - 80, ly = margin.top + 6;
